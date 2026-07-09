@@ -238,7 +238,12 @@ let state = {
   srcOk: 0, srcTotal: 0, expandedSrc: null, expandedHN: false
 };
 const MAX_HISTORY = 288;
-const CORS = 'https://api.allorigins.win/raw?url=';
+// === CORS PROXIES (fallback chain) ===
+const PROXIES = [
+  url => 'https://corsproxy.io/?' + encodeURIComponent(url),
+  url => 'https://api.codetabs.com/v1/proxy?quest=' + encodeURIComponent(url),
+  url => 'https://api.allorigins.win/raw?url=' + encodeURIComponent(url),
+];
 
 // === HELPERS ===
 function $(id) { return document.getElementById(id); }
@@ -272,10 +277,30 @@ function alert(msg, color) {
 }
 
 // === FETCH UTILS ===
+// Direct fetch (for CORS-friendly APIs)
 async function fetchJSON(url, timeout = 8000) {
   const c = new AbortController(); const t = setTimeout(() => c.abort(), timeout);
   try { const r = await fetch(url, {signal:c.signal}); clearTimeout(t); return await r.json(); }
   catch { clearTimeout(t); return null; }
+}
+// Proxied fetch (for no-CORS APIs like NOAA) — tries direct first, then proxy chain
+async function fetchProxied(url, timeout = 10000) {
+  // Try direct first
+  try {
+    const c = new AbortController(); const t = setTimeout(() => c.abort(), timeout);
+    const r = await fetch(url, {signal:c.signal, mode:'cors'});
+    clearTimeout(t); const d = await r.json(); return d;
+  } catch {}
+  // Try each proxy
+  for (const proxy of PROXIES) {
+    try {
+      const c = new AbortController(); const t = setTimeout(() => c.abort(), timeout);
+      const r = await fetch(proxy(url), {signal:c.signal});
+      clearTimeout(t);
+      if (r.ok) { const text = await r.text(); return JSON.parse(text); }
+    } catch {}
+  }
+  return null;
 }
 
 // === SPACE API (direct from browser) ===
@@ -283,10 +308,10 @@ async function fetchSpace() {
   try {
     // NOAA SWPC data
     const [plasma, mag, kp, goes] = await Promise.allSettled([
-      fetchJSON(CORS + 'https://services.swpc.noaa.gov/products/solar-wind/plasma-7d.json'),
-      fetchJSON(CORS + 'https://services.swpc.noaa.gov/products/solar-wind/mag-7d.json'),
-      fetchJSON(CORS + 'https://services.swpc.noaa.gov/products/noaa-planetary-k-index-forecast.json'),
-      fetchJSON(CORS + 'https://services.swpc.noaa.gov/products/goes-xray-flux-primary-5m.json'),
+      fetchProxied('https://services.swpc.noaa.gov/products/solar-wind/plasma-7d.json'),
+      fetchProxied('https://services.swpc.noaa.gov/products/solar-wind/mag-7d.json'),
+      fetchProxied('https://services.swpc.noaa.gov/products/noaa-planetary-k-index-forecast.json'),
+      fetchProxied('https://services.swpc.noaa.gov/products/goes-xray-flux-primary-5m.json'),
     ]);
     // Get latest values
     let swSpeed=400, swDensity=5, bz=0, bt=5, kpVal=2, xray=-6;
@@ -322,9 +347,9 @@ async function fetchSpace() {
     addLog(`✓ SPACE: Kp=${kpVal}, SW=${swSpeed}km/s, Xray=${xray.toFixed(1)}`);
     if (kpVal > 5) alert(`[ALERT] ГЕОМАГНІТНИЙ ШТОРМ Kp=${kpVal}`, '#f04');
   } catch(e) { addLog('⚠ SPACE OFFLINE: '+e.message); $('spaceSt').textContent = 'OFFLINE'; }
-  // Earthquakes
+  // Earthquakes (USGS supports CORS)
   try {
-    const qd = await fetchJSON('https://earthquake.usgs.gov/earthquakes/feed/v1.0/summary/1.0_day.geojson');
+    const qd = await fetchJSON('https://earthquake.usgs.gov/earthquakes/feed/v1.0/summary/1.0_day.geojson', 12000);
     if (qd && qd.features) {
       state.earthquakes = qd.features.slice(0,8).map(f => ({
         mag: f.properties.mag, place: f.properties.place, time: f.properties.time
