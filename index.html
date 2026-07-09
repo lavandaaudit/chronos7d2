@@ -238,12 +238,9 @@ let state = {
   srcOk: 0, srcTotal: 0, expandedSrc: null, expandedHN: false
 };
 const MAX_HISTORY = 288;
-// === CORS PROXIES (fallback chain) ===
-const PROXIES = [
-  url => 'https://corsproxy.io/?' + encodeURIComponent(url),
-  url => 'https://api.codetabs.com/v1/proxy?quest=' + encodeURIComponent(url),
-  url => 'https://api.allorigins.win/raw?url=' + encodeURIComponent(url),
-];
+// === NOAA NOW SUPPORTS CORS DIRECTLY (Access-Control-Allow-Origin: *) ===
+// No proxy needed — all APIs below send CORS headers
+const NOAA_BASE = 'https://services.swpc.noaa.gov';
 
 // === HELPERS ===
 function $(id) { return document.getElementById(id); }
@@ -277,59 +274,56 @@ function alert(msg, color) {
 }
 
 // === FETCH UTILS ===
-// Direct fetch (for CORS-friendly APIs)
-async function fetchJSON(url, timeout = 8000) {
+// Universal fetch with timeout + error logging
+async function fetchJSON(url, timeout = 10000) {
   const c = new AbortController(); const t = setTimeout(() => c.abort(), timeout);
-  try { const r = await fetch(url, {signal:c.signal}); clearTimeout(t); return await r.json(); }
-  catch { clearTimeout(t); return null; }
-}
-// Proxied fetch (for no-CORS APIs like NOAA) — tries direct first, then proxy chain
-async function fetchProxied(url, timeout = 10000) {
-  // Try direct first
   try {
-    const c = new AbortController(); const t = setTimeout(() => c.abort(), timeout);
-    const r = await fetch(url, {signal:c.signal, mode:'cors'});
-    clearTimeout(t); const d = await r.json(); return d;
-  } catch {}
-  // Try each proxy
-  for (const proxy of PROXIES) {
-    try {
-      const c = new AbortController(); const t = setTimeout(() => c.abort(), timeout);
-      const r = await fetch(proxy(url), {signal:c.signal});
-      clearTimeout(t);
-      if (r.ok) { const text = await r.text(); return JSON.parse(text); }
-    } catch {}
+    const r = await fetch(url, {signal:c.signal});
+    clearTimeout(t);
+    if (!r.ok) { addLog('✗ HTTP ' + r.status + ': ' + url.split('/').slice(-2).join('/')); return null; }
+    return await r.json();
+  } catch(e) {
+    clearTimeout(t);
+    const name = url.split('/').slice(-2).join('/');
+    addLog('✗ FAIL: ' + name + ' — ' + (e.name==='AbortError'?'timeout':e.message));
+    return null;
   }
-  return null;
 }
 
-// === SPACE API (direct from browser) ===
+// === SPACE API (NOAA SWPC — CORS-enabled, new 2026 URLs) ===
 async function fetchSpace() {
   try {
-    // NOAA SWPC data
-    const [plasma, mag, kp, goes] = await Promise.allSettled([
-      fetchProxied('https://services.swpc.noaa.gov/products/solar-wind/plasma-7d.json'),
-      fetchProxied('https://services.swpc.noaa.gov/products/solar-wind/mag-7d.json'),
-      fetchProxied('https://services.swpc.noaa.gov/products/noaa-planetary-k-index-forecast.json'),
-      fetchProxied('https://services.swpc.noaa.gov/products/goes-xray-flux-primary-5m.json'),
+    // NOAA moved data in 2026 — new compact summary endpoints + Kp forecast + X-ray
+    const [swSum, magSum, kpData, xrayData] = await Promise.allSettled([
+      fetchJSON(NOAA_BASE + '/products/summary/solar-wind-speed.json'),
+      fetchJSON(NOAA_BASE + '/products/summary/solar-wind-mag-field.json'),
+      fetchJSON(NOAA_BASE + '/products/noaa-planetary-k-index-forecast.json'),
+      fetchJSON(NOAA_BASE + '/json/goes/primary/xray-flares-latest.json'),
     ]);
-    // Get latest values
     let swSpeed=400, swDensity=5, bz=0, bt=5, kpVal=2, xray=-6;
-    if (plasma.status==='fulfilled' && plasma.value) {
-      const d = plasma.value; const last = d[d.length-1];
-      if (last && last[0]!=='time_tag') { swSpeed=parseFloat(last[2])||400; swDensity=parseFloat(last[1])||5; }
+    // Solar wind speed — new format: [{"proton_speed": 545, "time_tag": "..."}]
+    if (swSum.status==='fulfilled' && swSum.value && Array.isArray(swSum.value) && swSum.value.length) {
+      swSpeed = swSum.value[0].proton_speed || 400;
     }
-    if (mag.status==='fulfilled' && mag.value) {
-      const d = mag.value; const last = d[d.length-1];
-      if (last && last[0]!=='time_tag') { bz=parseFloat(last[2])||0; bt=parseFloat(last[1])||5; }
+    // Magnetic field — new format: [{"bt": 11, "bz_gsm": 4, "time_tag": "..."}]
+    if (magSum.status==='fulfilled' && magSum.value && Array.isArray(magSum.value) && magSum.value.length) {
+      bt = magSum.value[0].bt || 5;
+      bz = magSum.value[0].bz_gsm || 0;
     }
-    if (kp.status==='fulfilled' && kp.value) {
-      const d = kp.value;
-      for (let i=d.length-1;i>=0;i--) { if (d[i][1] && !isNaN(parseFloat(d[i][1]))) { kpVal=parseFloat(d[i][1]); break; } }
+    // Kp forecast — format: [{"time_tag":"...","kp":2.33,"observed":"predicted"}]
+    if (kpData.status==='fulfilled' && kpData.value && Array.isArray(kpData.value)) {
+      for (let i=kpData.value.length-1;i>=0;i--) {
+        const v = kpData.value[i].kp;
+        if (v != null && !isNaN(parseFloat(v))) { kpVal=parseFloat(v); break; }
+      }
     }
-    if (goes.status==='fulfilled' && goes.value) {
-      const d = goes.value; const last = d[d.length-1];
-      if (last && last[0]!=='time_tag') { xray=last[1] && last[1].length > 1 ? Math.log10(Math.max(1e-10, parseFloat(last[1][1])||1e-8)) : -6; }
+    // X-ray flares — format: [{"current_class":"B4.0",...}]
+    if (xrayData.status==='fulfilled' && xrayData.value && Array.isArray(xrayData.value) && xrayData.value.length) {
+      const cls = xrayData.value[0].current_class || 'B1.0';
+      const flrMap = {'A':-8,'B':-7,'C':-6,'M':-5,'X':-4};
+      const letter = cls.charAt(0).toUpperCase();
+      const num = parseFloat(cls.slice(1)) || 1;
+      xray = (flrMap[letter]||-7) + Math.log10(Math.max(0.01, num));
     }
     // Score
     const sKp = clamp((kpVal/9)*100, 0, 100);
@@ -343,7 +337,8 @@ async function fetchSpace() {
     if (xray > -5) alerts.push('SOLAR_FLARE');
     state.space = { kp:kpVal, swSpeed, swDensity, bz, bt, xray, score, alerts };
     $('spaceSt').textContent = 'ОНЛАЙН';
-    state.srcOk += 4; state.srcTotal += 4;
+    const spaceOk = [swSum, magSum, kpData, xrayData].filter(r=>r.status==='fulfilled'&&r.value).length;
+    state.srcOk += spaceOk; state.srcTotal += 4;
     addLog(`✓ SPACE: Kp=${kpVal}, SW=${swSpeed}km/s, Xray=${xray.toFixed(1)}`);
     if (kpVal > 5) alert(`[ALERT] ГЕОМАГНІТНИЙ ШТОРМ Kp=${kpVal}`, '#f04');
   } catch(e) { addLog('⚠ SPACE OFFLINE: '+e.message); $('spaceSt').textContent = 'OFFLINE'; }
@@ -386,12 +381,18 @@ async function fetchEarth() {
     const uv = avg(c.uv_index);
     const prec = avg(c.precipitation);
     const cloud = avg(c.cloud_cover);
-    // AQI (try a few stations)
+    // AQI — WAQI supports CORS, try Kyiv then fallback
     let aqi = 50, aqiCity = 'Kyiv';
     try {
-      const aqiData = await fetchJSON('https://api.waqi.info/feed/@3562/?token=demo');
-      if (aqiData && aqiData.data && aqiData.data.aqi) { aqi = parseInt(aqiData.data.aqi) || 50; aqiCity = aqiData.data.city?.name || 'Unknown'; }
+      const aqiData = await fetchJSON('https://api.waqi.info/feed/kyiv/?token=demo');
+      if (aqiData && aqiData.data && aqiData.data.aqi) { aqi = parseInt(aqiData.data.aqi) || 50; aqiCity = aqiData.data.city?.name || 'Kyiv'; }
     } catch {}
+    if (aqi === 50) {
+      try {
+        const aqiData2 = await fetchJSON('https://api.waqi.info/feed/@3562/?token=demo');
+        if (aqiData2 && aqiData2.data && aqiData2.data.aqi) { aqi = parseInt(aqiData2.data.aqi) || 50; aqiCity = aqiData2.data.city?.name || 'Unknown'; }
+      } catch {}
+    }
     const score = clamp(
       (Math.abs(temp-15)/15*25 + Math.abs(press-1013)/30*25 + aqi/300*25 + wind/50*25), 0, 100
     );
@@ -437,7 +438,7 @@ async function analyzeSentiment(url) {
 
 async function fetchHuman() {
   try {
-    const [bbc,reuters,aljazeera,fg,crypto,hnData,githubData] = await Promise.allSettled([
+    const [bbc,reuters,aljazeera,fg,coinGeckoPrices,hnData,githubData] = await Promise.allSettled([
       analyzeSentiment('https://api.rss2json.com/v1/api.json?rss_url=http://feeds.bbci.co.uk/news/world/rss.xml'),
       analyzeSentiment('https://api.rss2json.com/v1/api.json?rss_url=https://feeds.reuters.com/reuters/topNews'),
       analyzeSentiment('https://api.rss2json.com/v1/api.json?rss_url=https://www.aljazeera.com/xml/rss/all.xml'),
@@ -466,16 +467,16 @@ async function fetchHuman() {
       fearGreed.classification = fg.value.data[0].value_classification||'Neutral';
     }
 
-    let crypto = {btc24hChange:2,eth24hChange:2,btcPrice:0,ethPrice:0,btcMcap:0,ethMcap:0,btcDominance:0,totalMcap:0,totalVolume24h:0};
-    if (crypto.status==='fulfilled' && crypto.value) {
-      const cd = crypto.value;
-      if(cd.bitcoin){crypto.btcPrice=cd.bitcoin.usd||0;crypto.btc24hChange=Math.abs(cd.bitcoin.usd_24h_change||2);crypto.btcMcap=cd.bitcoin.usd_market_cap||0;}
-      if(cd.ethereum){crypto.ethPrice=cd.ethereum.usd||0;crypto.eth24hChange=Math.abs(cd.ethereum.usd_24h_change||2);crypto.ethMcap=cd.ethereum.usd_market_cap||0;}
+    let cryptoData = {btc24hChange:2,eth24hChange:2,btcPrice:0,ethPrice:0,btcMcap:0,ethMcap:0,btcDominance:0,totalMcap:0,totalVolume24h:0};
+    if (coinGeckoPrices.status==='fulfilled' && coinGeckoPrices.value) {
+      const cd = coinGeckoPrices.value;
+      if(cd.bitcoin){cryptoData.btcPrice=cd.bitcoin.usd||0;cryptoData.btc24hChange=Math.abs(cd.bitcoin.usd_24h_change||2);cryptoData.btcMcap=cd.bitcoin.usd_market_cap||0;}
+      if(cd.ethereum){cryptoData.ethPrice=cd.ethereum.usd||0;cryptoData.eth24hChange=Math.abs(cd.ethereum.usd_24h_change||2);cryptoData.ethMcap=cd.ethereum.usd_market_cap||0;}
     }
     // Global crypto
     try {
       const gd = await fetchJSON('https://api.coingecko.com/api/v3/global');
-      if (gd?.data) { crypto.btcDominance=gd.data.market_cap_percentage?.btc||0; crypto.totalMcap=gd.data.total_market_cap?.usd||0; crypto.totalVolume24h=gd.data.total_volume?.usd||0; }
+      if (gd?.data) { cryptoData.btcDominance=gd.data.market_cap_percentage?.btc||0; cryptoData.totalMcap=gd.data.total_market_cap?.usd||0; cryptoData.totalVolume24h=gd.data.total_volume?.usd||0; }
     } catch {}
 
     const conflictKw = ["war","attack","conflict","strike","bomb","military","terror","sanctions","nuclear","missile","invasion"];
@@ -494,7 +495,7 @@ async function fetchHuman() {
     const hnResult = hnData.status==='fulfilled'?hnData.value:{headlines:[],sentiment:50,techMention:0};
     const githubResult = githubData.status==='fulfilled'?githubData.value:{repos:[],activityScore:40};
 
-    const sentNorm=(100-sentiment)/100, marketNorm=Math.min(crypto.btc24hChange/15,1),
+    const sentNorm=(100-sentiment)/100, marketNorm=Math.min(cryptoData.btc24hChange/15,1),
           fgNorm=Math.abs(fearGreed.value-50)/50, socialNorm=socialEntropy/100,
           geoNorm=geoRisk/100, techNorm=Math.abs((hnResult.sentiment||50)-50)/50;
     const score = (0.25*sentNorm+0.20*marketNorm+0.20*fgNorm+0.15*socialNorm+0.10*geoNorm+0.10*techNorm)*100;
@@ -505,9 +506,9 @@ async function fetchHuman() {
     const topGlobalEmotions = Object.values(aggE).sort((a,b)=>b.count-a.count).slice(0,8);
 
     state.human = {
-      sentiment:Math.round(sentiment), marketVolatility:Math.round(crypto.btc24hChange*10)/10,
+      sentiment:Math.round(sentiment), marketVolatility:Math.round(cryptoData.btc24hChange*10)/10,
       fearGreed, socialEntropy:Math.round(socialEntropy), conflictProxy:conflictCount,
-      score:Math.round(score*10)/10, crypto, headlineCount:allHeadlines.length,
+      score:Math.round(score*10)/10, crypto:cryptoData, headlineCount:allHeadlines.length,
       geopoliticalRisk:Math.round(geoRisk), infoVelocity:Math.round(infoVelocity),
       emotionalDiversity:Math.round(emotionalDiversity), narrativeCoherence:Math.round(narrativeCoherence),
       techOptimism:Math.round(hnResult.sentiment||50), devActivity:Math.round(githubResult.activityScore||40),
@@ -519,13 +520,13 @@ async function fetchHuman() {
     state.hnHeadlines = (hnResult.headlines||[]).slice(0,5);
     state.trendingRepos = (githubResult.repos||[]).slice(0,3);
 
-    state.srcOk += activeSources + (fearGreed.value!==50?1:0) + (crypto.btcPrice>0?1:0) + (hnResult.headlines?.length>0?1:0) + (githubResult.repos?.length>0?1:0);
+    state.srcOk += activeSources + (fearGreed.value!==50?1:0) + (cryptoData.btcPrice>0?1:0) + (hnResult.headlines?.length>0?1:0) + (githubResult.repos?.length>0?1:0);
     state.srcTotal += 7;
     $('humanSt').textContent = 'ОНЛАЙН';
     addLog(`✓ HUMAN: Sen=${state.human.sentiment}, F&G=${fearGreed.value}, GeoRisk=${state.human.geopoliticalRisk}`);
 
     if (sentiment < 30) alert(`[ALERT] КРИТИЧНИЙ НЕГАТИВНИЙ НАСТРІЙ ${sentiment}/100`, '#f04');
-    if (crypto.btc24hChange > 8) alert(`[WARN] РИНКОВА ВОЛАТИЛЬНІСТЬ ${crypto.btc24hChange.toFixed(1)}%`, '#fa0');
+    if (cryptoData.btc24hChange > 8) alert(`[WARN] РИНКОВА ВОЛАТИЛЬНІСТЬ ${cryptoData.btc24hChange.toFixed(1)}%`, '#fa0');
   } catch(e) { addLog('⚠ HUMAN OFFLINE: '+e.message); $('humanSt').textContent = 'OFFLINE'; }
   renderHuman(); renderSentimentAnatomy(); renderCrypto(); renderTechPulse(); renderNews();
 }
