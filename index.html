@@ -1,0 +1,846 @@
+<!DOCTYPE html>
+<html lang="uk">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>IBONARIUM · AURA · Planetary Index v3.0</title>
+<link href="https://fonts.googleapis.com/css2?family=Space+Mono:ital,wght@0,400;0,700;1,400&display=swap" rel="stylesheet">
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:#020205;color:#eef;font-family:'Space Mono',monospace;font-size:10px;overflow-x:hidden;min-height:100vh}
+::-webkit-scrollbar{width:3px}::-webkit-scrollbar-thumb{background:#335}
+canvas#bg{position:fixed;inset:0;z-index:0;pointer-events:none;opacity:.3}
+.app{position:relative;z-index:10;display:grid;grid-template-columns:360px 1fr 360px;grid-template-rows:auto 1fr;gap:14px;height:100vh;padding:20px;max-width:1920px;margin:0 auto}
+.hdr{grid-column:1/-1;display:flex;justify-content:space-between;align-items:flex-end;border-bottom:1px solid rgba(100,100,255,.15);padding-bottom:8px;margin-bottom:4px}
+.brand{font-size:11px;letter-spacing:5px;color:#0ff;text-transform:uppercase;text-shadow:0 0 12px rgba(0,255,255,.3)}
+.sub-brand{font-size:8px;color:#668;margin-top:2px}
+.col-l,.col-r{display:flex;flex-direction:column;gap:10px;overflow-y:auto;padding-right:4px}
+.col-c{position:relative;display:flex;flex-direction:column;justify-content:center;align-items:center;border:1px solid rgba(100,100,255,.15);border-radius:4px;overflow:hidden;background:radial-gradient(circle at center,rgba(20,10,30,.3),transparent 70%)}
+.card{background:rgba(5,5,10,.85);border:1px solid rgba(100,100,255,.15);backdrop-filter:blur(10px);padding:10px;border-radius:4px;box-shadow:0 4px 20px rgba(0,0,0,.4)}
+.card-h{font-size:8px;color:#0ff;text-transform:uppercase;letter-spacing:1px;margin-bottom:8px;border-left:2px solid #80f;padding-left:6px;display:flex;justify-content:space-between}
+.layer-box{background:rgba(255,255,255,.02);padding:6px 8px;margin-bottom:4px;border-left:3px solid}
+.layer-space{border-color:#f80}.layer-earth{border-color:#0af}.layer-human{border-color:#f0f}
+.layer-title{font-size:9px;font-weight:bold;display:flex;justify-content:space-between}
+.layer-score{font-size:16px;font-weight:bold}
+.m-row{display:flex;justify-content:space-between;align-items:center;padding:2px 0;border-bottom:1px solid rgba(255,255,255,.03);font-size:8px}
+.m-lbl{color:#779}.m-val{color:#eef;font-weight:bold}.m-warn{color:#fa0!important}
+.analysis{font-size:7.5px;color:#99aabb;margin-top:6px;line-height:1.5;padding:6px 8px;background:rgba(0,0,0,.3);border-radius:2px;border-top:1px solid rgba(100,100,255,.08)}
+.analysis b{color:#bbc}
+.center-hud{position:absolute;bottom:16px;left:16px;pointer-events:none;text-align:left;z-index:5}
+.big-idx{font-size:48px;font-weight:300;color:#fff;line-height:1}
+.idx-lbl{color:#0ff;font-size:9px;letter-spacing:2px}
+.center-legend{position:absolute;top:12px;right:12px;text-align:right;z-index:5;font-size:8px;color:#668}
+.log-box{font-size:7px;color:#88a;max-height:100px;overflow-y:auto;line-height:1.4}
+.log-entry{margin-bottom:2px;padding-left:6px;border-left:1px solid #333}
+.log-time{color:#556;margin-right:4px}
+.alert-box{position:fixed;top:12px;right:12px;z-index:1000;display:flex;flex-direction:column;gap:6px;max-width:280px;pointer-events:none}
+.alert-item{background:rgba(0,0,0,.92);border:1px solid;padding:8px;font-size:8px;font-family:'Space Mono',monospace;pointer-events:auto;animation:glitch .4s cubic-bezier(.25,.46,.45,.94) both}
+@keyframes glitch{0%{transform:translateX(40px);opacity:0}100%{transform:translateX(0);opacity:1}}
+.news-item{font-size:7.5px;color:#88a;border-left:1px solid #333;padding-left:6px;padding-top:3px;padding-bottom:3px;line-height:1.35}
+.src-row{margin-bottom:4px;border:1px solid rgba(255,255,255,.03);border-radius:2px;overflow:hidden}
+.src-header{display:flex;justify-content:space-between;align-items:center;padding:4px 6px;cursor:pointer;background:rgba(255,255,255,.02)}
+.src-body{padding:4px 6px;background:rgba(0,0,0,.3);font-size:7px;display:none}
+.src-body.open{display:block}
+.emo-bar{display:flex;height:6px;border-radius:2px;overflow:hidden;background:#111;margin-bottom:3px}
+.emo-tag{font-size:7px;padding:2px 5px;border-radius:2px;display:inline-block;margin:1px}
+.btn-refresh{width:100%;background:rgba(255,255,255,.03);border:1px solid rgba(100,100,255,.15);border-radius:4px;padding:8px;color:#88a;font-family:'Space Mono',monospace;font-size:9px;cursor:pointer}
+.btn-refresh:hover{background:rgba(100,100,255,.08)}
+.crypto-grid{display:grid;grid-template-columns:1fr 1fr;gap:2px;margin-bottom:4px}
+.crypto-cell{padding:4px;border-left:2px solid;border-radius:1}
+@media(max-width:1200px){
+  .app{grid-template-columns:1fr!important;grid-template-rows:auto!important;padding:10px!important;height:auto!important;gap:8px!important;display:flex!important;flex-direction:column!important}
+  .col-l,.col-r{order:2;overflow:visible!important;height:auto;padding:0;flex:none}
+  .col-c{order:1;height:42vh;min-height:260px;flex:none}
+  .hdr{flex-direction:column;align-items:flex-start;gap:4px}
+  .brand{font-size:9px!important;letter-spacing:3px}.sub-brand{font-size:7px}
+  .m-row{font-size:9px;padding:3px 0}.m-lbl{font-size:9px}.m-val{font-size:9px}
+  .analysis{font-size:8.5px}.layer-score{font-size:14px}.layer-title{font-size:9px}
+  .big-idx{font-size:34px}.center-legend{font-size:8px}
+  .alert-box{top:8px;right:8px;left:8px;max-width:none}.alert-item{font-size:9px;padding:6px}
+  .news-item{font-size:8.5px}.log-box{font-size:8px}.card{padding:8px}.card-h{font-size:8px}
+}
+@media(max-width:480px){
+  .app{padding:6px!important;gap:6px!important}.col-c{height:32vh;min-height:200px}
+  .brand{font-size:8px!important;letter-spacing:2px}.big-idx{font-size:28px}
+  .center-legend{display:none}.m-row{font-size:10px;padding:4px 0}
+  .m-lbl{font-size:10px}.m-val{font-size:10px}.layer-title{font-size:10px}
+  .layer-score{font-size:14px}.analysis{font-size:9px}.alert-item{font-size:10px}
+  .news-item{font-size:9px}
+}
+</style>
+</head>
+<body>
+<canvas id="bg"></canvas>
+<div class="alert-box" id="alerts"></div>
+
+<div class="app">
+  <div class="hdr">
+    <div>
+      <div class="brand">IBONARIUM·CHRONOS·PLANETARY.AURA.lavandaaudit.2026</div>
+      <div class="sub-brand">PLANETARY CONSCIOUSNESS INDEX · GLOBAL AGGREGATE · <span id="srcCount">0/0</span> SOURCES</div>
+    </div>
+    <div style="text-align:right">
+      <div style="font-size:18px;font-weight:bold;color:#fff" id="clock">--:--:--</div>
+      <div style="font-size:8px;color:#668">UTC (GLOBAL)</div>
+    </div>
+  </div>
+
+  <div class="col-l">
+    <!-- SPACE -->
+    <div class="card">
+      <div class="card-h"><span>☀️ SPACE LAYER</span><span id="spaceSt">СИНХР...</span></div>
+      <div class="layer-box layer-space">
+        <div class="layer-title"><span>КОСМІЧНА НЕРВОВА СИСТЕМА</span><span class="layer-score" id="spaceScore">--</span></div>
+        <div class="m-row"><span class="m-lbl">Kp Index</span><span class="m-val" id="sKp">--</span></div>
+        <div class="m-row"><span class="m-lbl">Solar Wind (км/с)</span><span class="m-val" id="sSW">--</span></div>
+        <div class="m-row"><span class="m-lbl">Density (p/cm³)</span><span class="m-val" id="sDen">--</span></div>
+        <div class="m-row"><span class="m-lbl">Bz IMF (nT)</span><span class="m-val" id="sBz">--</span></div>
+        <div class="m-row"><span class="m-lbl">Bt Total (nT)</span><span class="m-val" id="sBt">--</span></div>
+        <div class="m-row"><span class="m-lbl">X-ray Flux (log)</span><span class="m-val" id="sXray">--</span></div>
+        <div class="analysis" id="spaceAnalysis">Очікування космічних даних...</div>
+      </div>
+    </div>
+    <!-- EARTH -->
+    <div class="card">
+      <div class="card-h"><span>🌍 EARTH PHYSICAL LAYER (8 точок)</span><span id="earthSt">СИНХР...</span></div>
+      <div class="layer-box layer-earth">
+        <div class="layer-title"><span>ПЛАНЕТАРНЕ ТІЛО (AVG)</span><span class="layer-score" id="earthScore">--</span></div>
+        <div class="m-row"><span class="m-lbl">Avg Temperature (°C)</span><span class="m-val" id="eTemp">--</span></div>
+        <div class="m-row"><span class="m-lbl">Pressure (hPa)</span><span class="m-val" id="ePres">--</span></div>
+        <div class="m-row"><span class="m-lbl">Humidity (%)</span><span class="m-val" id="eHum">--</span></div>
+        <div class="m-row"><span class="m-lbl">Wind (km/h)</span><span class="m-val" id="eWind">--</span></div>
+        <div class="m-row"><span class="m-lbl">UV Index</span><span class="m-val" id="eUV">--</span></div>
+        <div class="m-row"><span class="m-lbl">Cloud Cover (%)</span><span class="m-val" id="eCloud">--</span></div>
+        <div class="m-row"><span class="m-lbl">Precipitation (мм)</span><span class="m-val" id="ePrec">--</span></div>
+        <div class="m-row"><span class="m-lbl">AQI</span><span class="m-val" id="eAQI">--</span></div>
+        <div class="analysis" id="earthAnalysis">Агрегація глобальних даних...</div>
+      </div>
+    </div>
+    <!-- EARTHQUAKES -->
+    <div class="card">
+      <div class="card-h"><span>🌍 EARTHQUAKES (USGS)</span></div>
+      <div style="max-height:120px;overflow-y:auto" id="quakeList"><div class="analysis">Очікування...</div></div>
+    </div>
+  </div>
+
+  <!-- CENTER -->
+  <div class="col-c">
+    <canvas id="sphere"></canvas>
+    <div class="center-hud">
+      <div class="idx-lbl">IBONARIUM INDEX</div>
+      <div class="big-idx" id="ibonariumIdx">--</div>
+      <div style="font-size:8px;color:#668;margin-top:4px">0.4·SPACE + 0.3·EARTH + 0.3·HUMAN</div>
+    </div>
+    <div class="center-legend">
+      <div style="color:#f80">● SPACE</div>
+      <div style="color:#0af">● EARTH</div>
+      <div style="color:#f0f">● HUMAN</div>
+      <div style="color:#a0f">● IBONARIUM</div>
+    </div>
+  </div>
+
+  <div class="col-r">
+    <!-- HUMAN MAIN -->
+    <div class="card">
+      <div class="card-h"><span>🧠 HUMAN FIELD LAYER</span><span id="humanSt">СИНХР...</span></div>
+      <div class="layer-box layer-human">
+        <div class="layer-title"><span>КОЛЕКТИВНА ПСИХІКА</span><span class="layer-score" id="humanScore">--</span></div>
+        <div class="m-row"><span class="m-lbl">News Sentiment</span><span class="m-val" id="hSent">--</span></div>
+        <div class="m-row"><span class="m-lbl">Market Volatility</span><span class="m-val" id="hVol">--</span></div>
+        <div class="m-row"><span class="m-lbl">Fear & Greed</span><span class="m-val" id="hFG">--</span></div>
+        <div class="m-row"><span class="m-lbl">Geopolitical Risk</span><span class="m-val" id="hGeo">--</span></div>
+        <div class="m-row"><span class="m-lbl">Social Entropy</span><span class="m-val" id="hEnt">--</span></div>
+        <div class="m-row"><span class="m-lbl">Conflict Proxy</span><span class="m-val" id="hConf">--</span></div>
+        <div class="m-row"><span class="m-lbl">Info Velocity</span><span class="m-val" id="hVel">--</span></div>
+        <div class="m-row"><span class="m-lbl">Emotional Diversity</span><span class="m-val" id="hDiv">--</span></div>
+        <div class="m-row"><span class="m-lbl">Narrative Coherence</span><span class="m-val" id="hCoh">--</span></div>
+        <div class="analysis" id="humanAnalysis">Очікування соціальних даних...</div>
+      </div>
+    </div>
+    <!-- SENTIMENT ANATOMY -->
+    <div class="card">
+      <div class="card-h"><span>📊 SENTIMENT ANATOMY</span><span style="color:#668;font-size:7px">EMOTION MAP</span></div>
+      <div id="emotionTags" style="margin-bottom:6px"></div>
+      <div id="emotionBar"></div>
+      <div id="sourceBreakdown"></div>
+      <div class="analysis" id="sentimentAnalysis"></div>
+    </div>
+    <!-- CRYPTO -->
+    <div class="card">
+      <div class="card-h"><span>₿ CRYPTO & MARKETS</span><span style="color:#0fa;font-size:7px" id="cryptoLive">—</span></div>
+      <div class="crypto-grid">
+        <div class="crypto-cell" style="background:rgba(255,136,0,.05);border-color:#f80">
+          <div style="font-size:7px;color:#f80;margin-bottom:1">BITCOIN</div>
+          <div style="font-size:11px;font-weight:bold;color:#fff" id="btcPrice">--</div>
+          <div style="font-size:7px" id="btcChange">--</div>
+          <div style="font-size:6px;color:#556" id="btcMcap"></div>
+        </div>
+        <div class="crypto-cell" style="background:rgba(100,100,255,.05);border-color:#66f">
+          <div style="font-size:7px;color:#66f;margin-bottom:1">ETHEREUM</div>
+          <div style="font-size:11px;font-weight:bold;color:#fff" id="ethPrice">--</div>
+          <div style="font-size:7px" id="ethChange">--</div>
+          <div style="font-size:6px;color:#556" id="ethMcap"></div>
+        </div>
+      </div>
+      <div class="m-row"><span class="m-lbl">Total Market Cap</span><span class="m-val" id="totalMcap">--</span></div>
+      <div class="m-row"><span class="m-lbl">24h Volume</span><span class="m-val" id="totalVol">--</span></div>
+      <div class="m-row"><span class="m-lbl">BTC Dominance</span><span class="m-val" id="btcDom">--</span></div>
+      <div class="analysis" id="cryptoAnalysis"></div>
+    </div>
+    <!-- TECH PULSE -->
+    <div class="card">
+      <div class="card-h"><span>⚡ TECH & DEV PULSE</span><span style="color:#0af;font-size:7px">HACKERNEWS + GITHUB</span></div>
+      <div class="m-row"><span class="m-lbl">Tech Optimism (HN)</span><span class="m-val" id="techOpt">--</span></div>
+      <div class="m-row"><span class="m-lbl">Dev Activity (GitHub)</span><span class="m-val" id="devAct">--</span></div>
+      <div id="trendingRepos"></div>
+      <div id="hnHeadlines" style="margin-top:2px"></div>
+      <div class="analysis" id="techAnalysis"></div>
+    </div>
+    <!-- ANALYTICS -->
+    <div class="card">
+      <div class="card-h"><span>📈 ANALYTICS</span></div>
+      <div class="m-row"><span class="m-lbl">24h Average</span><span class="m-val" id="avgIdx">--</span></div>
+      <div class="m-row"><span class="m-lbl">Deviation σ</span><span class="m-val" id="devIdx">--</span></div>
+      <div class="m-row"><span class="m-lbl">Trend (LinReg)</span><span class="m-val" id="trendIdx">--</span></div>
+      <div class="m-row"><span class="m-lbl">Data Points</span><span class="m-val" id="dataPts">0</span></div>
+      <div class="m-row"><span class="m-lbl">Space Avg / Trend</span><span class="m-val" id="spaceTrend">--</span></div>
+      <div class="m-row"><span class="m-lbl">Earth Avg / Trend</span><span class="m-val" id="earthTrend">--</span></div>
+      <div class="m-row"><span class="m-lbl">Human Avg / Trend</span><span class="m-val" id="humanTrend">--</span></div>
+      <div class="analysis" id="analyticsText"></div>
+    </div>
+    <!-- NEWS -->
+    <div class="card">
+      <div class="card-h"><span>📡 NEWS (BBC+Reuters+AlJazeera)</span></div>
+      <div style="max-height:100px;overflow-y:auto" id="newsList"><div class="analysis">Очікування новин...</div></div>
+    </div>
+    <!-- SYSTEM LOG -->
+    <div class="card" style="flex:1;display:flex;flex-direction:column">
+      <div class="card-h"><span>📡 SYSTEM LOG</span></div>
+      <div class="log-box" id="logBox"></div>
+      <div style="margin-top:10px;padding-top:8px;border-top:1px solid #112;font-size:7px;color:#446;line-height:1.5">
+        <div style="color:#0ff;margin-bottom:3px;font-weight:bold;letter-spacing:1">IBONARIUM STATE VECTOR v3.0</div>
+        <b style="color:#f80">КОСМОС</b> — NOAA SWPC (Plasma+Mag+Kp+GOES X-ray+RSS) + USGS Earthquakes<br>
+        <b style="color:#0af">ЗЕМЛЯ</b> — Open-Meteo (8 cities) + WAQI AQI (4 stations)<br>
+        <b style="color:#f0f">СОЦІУМ</b> — BBC/Reuters/AlJazeera RSS + HackerNews + GitHub + Fear&Greed + CoinGecko<br>
+        <div style="margin-top:4px">Оновлення: Космос 1хв, Земля 5хв, Соціум 10хв · LocalStorage персистентність</div>
+      </div>
+    </div>
+    <button class="btn-refresh" onclick="fetchAll()">🔄 ОНОВИТИ ВСІ ДАНІ</button>
+  </div>
+</div>
+
+<script>
+// === STATE ===
+let state = {
+  space: null, earth: null, human: null, ibonarium: 0,
+  history: [], logs: [], headlines: [], earthquakes: [],
+  sourceSentiment: {}, topEmotions: [], hnHeadlines: [], trendingRepos: [],
+  srcOk: 0, srcTotal: 0, expandedSrc: null, expandedHN: false
+};
+const MAX_HISTORY = 288;
+const CORS = 'https://api.allorigins.win/raw?url=';
+
+// === HELPERS ===
+function $(id) { return document.getElementById(id); }
+function scoreColor(s) { return s < 30 ? '#f04' : s < 50 ? '#fa0' : s < 70 ? '#ff0' : '#0fa'; }
+function clamp(v, mn, mx) { return Math.max(mn, Math.min(mx, v)); }
+function linearTrend(vals) {
+  if (vals.length < 5) return '— STABLE';
+  const n = vals.length, xM = (n-1)/2, yM = vals.reduce((a,b)=>a+b,0)/n;
+  let num=0, den=0;
+  for (let i=0;i<n;i++) { num+=(i-xM)*(vals[i]-yM); den+=(i-xM)**2; }
+  if (!den) return '— STABLE';
+  const sl = num/den;
+  return sl > 0.1 ? '↗ UP' : sl < -0.1 ? '↘ DOWN' : '— STABLE';
+}
+function addLog(msg) {
+  const t = new Date().toLocaleTimeString('uk-UA',{hour12:false});
+  state.logs.unshift(`[${t}] ${msg}`);
+  if (state.logs.length > 30) state.logs.length = 30;
+  renderLog();
+}
+function renderLog() {
+  $('logBox').innerHTML = state.logs.map(l =>
+    l.replace(/\[([^\]]+)\]/, '<span class="log-time">[$1]</span>')
+  ).map(l => `<div class="log-entry">${l}</div>`).join('');
+}
+function alert(msg, color) {
+  const d = document.createElement('div');
+  d.className = 'alert-item'; d.style.borderColor = color; d.style.color = color;
+  d.textContent = msg; $('alerts').appendChild(d);
+  setTimeout(() => d.remove(), 10000);
+}
+
+// === FETCH UTILS ===
+async function fetchJSON(url, timeout = 8000) {
+  const c = new AbortController(); const t = setTimeout(() => c.abort(), timeout);
+  try { const r = await fetch(url, {signal:c.signal}); clearTimeout(t); return await r.json(); }
+  catch { clearTimeout(t); return null; }
+}
+
+// === SPACE API (direct from browser) ===
+async function fetchSpace() {
+  try {
+    // NOAA SWPC data
+    const [plasma, mag, kp, goes] = await Promise.allSettled([
+      fetchJSON(CORS + 'https://services.swpc.noaa.gov/products/solar-wind/plasma-7d.json'),
+      fetchJSON(CORS + 'https://services.swpc.noaa.gov/products/solar-wind/mag-7d.json'),
+      fetchJSON(CORS + 'https://services.swpc.noaa.gov/products/noaa-planetary-k-index-forecast.json'),
+      fetchJSON(CORS + 'https://services.swpc.noaa.gov/products/goes-xray-flux-primary-5m.json'),
+    ]);
+    // Get latest values
+    let swSpeed=400, swDensity=5, bz=0, bt=5, kpVal=2, xray=-6;
+    if (plasma.status==='fulfilled' && plasma.value) {
+      const d = plasma.value; const last = d[d.length-1];
+      if (last && last[0]!=='time_tag') { swSpeed=parseFloat(last[2])||400; swDensity=parseFloat(last[1])||5; }
+    }
+    if (mag.status==='fulfilled' && mag.value) {
+      const d = mag.value; const last = d[d.length-1];
+      if (last && last[0]!=='time_tag') { bz=parseFloat(last[2])||0; bt=parseFloat(last[1])||5; }
+    }
+    if (kp.status==='fulfilled' && kp.value) {
+      const d = kp.value;
+      for (let i=d.length-1;i>=0;i--) { if (d[i][1] && !isNaN(parseFloat(d[i][1]))) { kpVal=parseFloat(d[i][1]); break; } }
+    }
+    if (goes.status==='fulfilled' && goes.value) {
+      const d = goes.value; const last = d[d.length-1];
+      if (last && last[0]!=='time_tag') { xray=last[1] && last[1].length > 1 ? Math.log10(Math.max(1e-10, parseFloat(last[1][1])||1e-8)) : -6; }
+    }
+    // Score
+    const sKp = clamp((kpVal/9)*100, 0, 100);
+    const sSW = clamp(((swSpeed-300)/700)*100, 0, 100);
+    const sBz = clamp((Math.abs(bz)/20)*100, 0, 100);
+    const sXr = clamp(((xray+8)/4)*100, 0, 100);
+    const score = sKp*0.3 + sSW*0.25 + sBz*0.25 + sXr*0.2;
+    const alerts = [];
+    if (kpVal > 5) alerts.push('GEOMAGNETIC_STORM');
+    if (swSpeed > 600) alerts.push('HIGH_SOLAR_WIND');
+    if (xray > -5) alerts.push('SOLAR_FLARE');
+    state.space = { kp:kpVal, swSpeed, swDensity, bz, bt, xray, score, alerts };
+    $('spaceSt').textContent = 'ОНЛАЙН';
+    state.srcOk += 4; state.srcTotal += 4;
+    addLog(`✓ SPACE: Kp=${kpVal}, SW=${swSpeed}km/s, Xray=${xray.toFixed(1)}`);
+    if (kpVal > 5) alert(`[ALERT] ГЕОМАГНІТНИЙ ШТОРМ Kp=${kpVal}`, '#f04');
+  } catch(e) { addLog('⚠ SPACE OFFLINE: '+e.message); $('spaceSt').textContent = 'OFFLINE'; }
+  // Earthquakes
+  try {
+    const qd = await fetchJSON('https://earthquake.usgs.gov/earthquakes/feed/v1.0/summary/1.0_day.geojson');
+    if (qd && qd.features) {
+      state.earthquakes = qd.features.slice(0,8).map(f => ({
+        mag: f.properties.mag, place: f.properties.place, time: f.properties.time
+      }));
+      const m5 = state.earthquakes.find(e => e.mag >= 5);
+      if (m5) alert(`[WARN] ЗЕМЛЕТРУС M${m5.mag} — ${m5.place}`, '#fa0');
+    }
+  } catch {}
+  renderSpace(); renderEarthquakes();
+}
+
+// === EARTH API ===
+async function fetchEarth() {
+  try {
+    const cities = [
+      {name:'London',lat:51.5,lon:-0.1},{name:'NYC',lat:40.7,lon:-74},
+      {name:'Tokyo',lat:35.7,lon:139.7},{name:'Sydney',lat:-33.9,lon:151.2},
+      {name:'Rio',lat:-22.9,lon:-43.2},{name:'Moscow',lat:55.8,lon:37.6},
+      {name:'Delhi',lat:28.6,lon:77.2},{name:'Singapore',lat:1.3,lon:103.8}
+    ];
+    const url = 'https://api.open-meteo.com/v1/forecast?latitude='+cities.map(c=>c.lat).join(',')+
+      '&longitude='+cities.map(c=>c.lon).join(',')+
+      '&current=temperature_2m,relative_humidity_2m,surface_pressure,wind_speed_10m,uv_index,precipitation,cloud_cover'+
+      '&timezone=UTC';
+    const d = await fetchJSON(url);
+    if (!d || !d.current) throw new Error('No data');
+    const c = d.current;
+    const n = cities.length;
+    const avg = (arr) => arr.reduce((a,b)=>a+b,0)/arr.length;
+    const temp = avg(c.temperature_2m);
+    const press = avg(c.surface_pressure);
+    const hum = avg(c.relative_humidity_2m);
+    const wind = avg(c.wind_speed_10m);
+    const uv = avg(c.uv_index);
+    const prec = avg(c.precipitation);
+    const cloud = avg(c.cloud_cover);
+    // AQI (try a few stations)
+    let aqi = 50, aqiCity = 'Kyiv';
+    try {
+      const aqiData = await fetchJSON('https://api.waqi.info/feed/@3562/?token=demo');
+      if (aqiData && aqiData.data && aqiData.data.aqi) { aqi = parseInt(aqiData.data.aqi) || 50; aqiCity = aqiData.data.city?.name || 'Unknown'; }
+    } catch {}
+    const score = clamp(
+      (Math.abs(temp-15)/15*25 + Math.abs(press-1013)/30*25 + aqi/300*25 + wind/50*25), 0, 100
+    );
+    state.earth = { temp, press, humidity: hum, wind, uv, precipitation: prec, cloudCover: cloud, aqi, aqiCity, score };
+    $('earthSt').textContent = 'ОНЛАЙН';
+    state.srcOk += 1; state.srcTotal += 1;
+    addLog(`✓ EARTH: T=${temp.toFixed(1)}°C, AQI=${aqi}`);
+  } catch(e) { addLog('⚠ EARTH OFFLINE: '+e.message); $('earthSt').textContent = 'OFFLINE'; }
+  renderEarth();
+}
+
+// === HUMAN API ===
+const FEAR = ["war","dead","kill","crisis","crash","attack","threat","death","conflict","bomb","strike","terror","violence","flood","disaster","emergency","warning","explosion","fire","sanctions","nuclear","missile","refugee","genocide","invasion"];
+const HOPE = ["peace","win","new","safe","good","growth","deal","help","cure","solution","hope","success","record","breakthrough","recovery","progress","agreement","innovation","historic","reform","democracy","freedom","celebrate","milestone"];
+const TECH = ["ai","technology","software","startup","quantum","space","robot","algorithm","cyber","digital","app","electric","satellite","neural","blockchain","compute","chip","data"];
+const ECON = ["economy","inflation","interest","fed","market","gdp","trade","tariff","employment","recession","stock","bond","currency","bank","price","oil","energy","supply"];
+
+async function analyzeSentiment(url) {
+  let fear=0, hope=0, tech=0, econ=0, headlines=[], totalWords=0, topEmotions=[];
+  const emap = {};
+  try {
+    const d = await fetchJSON(url);
+    if (d && d.items) {
+      d.items.slice(0,15).forEach(item => {
+        const txt = `${item.title||''} ${item.description||''}`.toLowerCase();
+        FEAR.forEach(w => { if(txt.includes(w)){fear++;emap[w]=(emap[w]||0)+1;} });
+        HOPE.forEach(w => { if(txt.includes(w)){hope++;emap[w]=(emap[w]||0)+1;} });
+        TECH.forEach(w => { if(txt.includes(w)){tech++;emap[w]=(emap[w]||0)+1;} });
+        ECON.forEach(w => { if(txt.includes(w)){econ++;emap[w]=(emap[w]||0)+1;} });
+        if (item.title) headlines.push(item.title);
+        totalWords += txt.split(/\s+/).length;
+      });
+    }
+  } catch {}
+  topEmotions = Object.entries(emap).sort(([,a],[,b])=>b-a).slice(0,5).map(([word,count]) => {
+    let type='neutral';
+    if(FEAR.includes(word))type='fear';else if(HOPE.includes(word))type='hope';
+    else if(TECH.includes(word))type='tech';else if(ECON.includes(word))type='economy';
+    return {word,type,count};
+  });
+  return {fear,hope,tech,econ,headlines,totalWords,topEmotions};
+}
+
+async function fetchHuman() {
+  try {
+    const [bbc,reuters,aljazeera,fg,crypto,hnData,githubData] = await Promise.allSettled([
+      analyzeSentiment('https://api.rss2json.com/v1/api.json?rss_url=http://feeds.bbci.co.uk/news/world/rss.xml'),
+      analyzeSentiment('https://api.rss2json.com/v1/api.json?rss_url=https://feeds.reuters.com/reuters/topNews'),
+      analyzeSentiment('https://api.rss2json.com/v1/api.json?rss_url=https://www.aljazeera.com/xml/rss/all.xml'),
+      fetchJSON('https://api.alternative.me/fng/?limit=1'),
+      fetchJSON('https://api.coingecko.com/api/v3/simple/price?ids=bitcoin,ethereum&vs_currencies=usd&include_24hr_change=true&include_market_cap=true'),
+      fetchHN(),
+      fetchGitHub()
+    ]);
+    const sources = {};
+    const proc = (name, r) => {
+      if (r.status==='fulfilled' && r.value) { sources[name] = r.value; return r.value; }
+      sources[name] = {fear:0,hope:0,tech:0,econ:0,headlines:[],totalWords:0,topEmotions:[],status:false};
+      return sources[name];
+    };
+    const bD = proc('bbc',bbc), rD = proc('reuters',reuters), aD = proc('aljazeera',aljazeera);
+    Object.keys(sources).forEach(k => sources[k].status = sources[k].headlines.length > 0);
+
+    let totalFear = bD.fear+rD.fear+aD.fear, totalHope = bD.hope+rD.hope+aD.hope;
+    let totalTech = bD.tech+rD.tech+aD.tech, totalEcon = bD.econ+rD.econ+aD.econ;
+    const allHeadlines = [...bD.headlines.slice(0,3),...rD.headlines.slice(0,3),...aD.headlines.slice(0,3)];
+    const sentiment = clamp(50 - totalFear*2.5 + totalHope*2, 10, 90);
+
+    let fearGreed = {value:50,classification:'Neutral'};
+    if (fg.status==='fulfilled' && fg.value?.data?.[0]) {
+      fearGreed.value = parseInt(fg.value.data[0].value)||50;
+      fearGreed.classification = fg.value.data[0].value_classification||'Neutral';
+    }
+
+    let crypto = {btc24hChange:2,eth24hChange:2,btcPrice:0,ethPrice:0,btcMcap:0,ethMcap:0,btcDominance:0,totalMcap:0,totalVolume24h:0};
+    if (crypto.status==='fulfilled' && crypto.value) {
+      const cd = crypto.value;
+      if(cd.bitcoin){crypto.btcPrice=cd.bitcoin.usd||0;crypto.btc24hChange=Math.abs(cd.bitcoin.usd_24h_change||2);crypto.btcMcap=cd.bitcoin.usd_market_cap||0;}
+      if(cd.ethereum){crypto.ethPrice=cd.ethereum.usd||0;crypto.eth24hChange=Math.abs(cd.ethereum.usd_24h_change||2);crypto.ethMcap=cd.ethereum.usd_market_cap||0;}
+    }
+    // Global crypto
+    try {
+      const gd = await fetchJSON('https://api.coingecko.com/api/v3/global');
+      if (gd?.data) { crypto.btcDominance=gd.data.market_cap_percentage?.btc||0; crypto.totalMcap=gd.data.total_market_cap?.usd||0; crypto.totalVolume24h=gd.data.total_volume?.usd||0; }
+    } catch {}
+
+    const conflictKw = ["war","attack","conflict","strike","bomb","military","terror","sanctions","nuclear","missile","invasion"];
+    const conflictCount = allHeadlines.filter(h => conflictKw.some(k=>h.toLowerCase().includes(k))).length;
+    const geoKw = ["sanctions","nuclear","missile","invasion","genocide","refugee","military","sovereignty","treaty","escalation","ceasefire","occupation"];
+    const geoRisk = clamp(allHeadlines.reduce((a,h)=>a+geoKw.filter(k=>h.toLowerCase().includes(k)).length,0)*5, 0, 100);
+    const socialEntropy = clamp(allHeadlines.length*1.5+Math.abs(totalFear-totalHope)*0.5, 0, 100);
+    const activeSources = [bD,rD,aD].filter(s=>s.headlines.length>0).length;
+    const infoVelocity = clamp(allHeadlines.length*3+activeSources*5, 0, 100);
+    const cats = [totalFear>0?1:0, totalHope>0?1:0, totalTech>0?1:0, totalEcon>0?1:0].reduce((a,b)=>a+b,0);
+    const emotionalDiversity = clamp(cats*25, 0, 100);
+    const allE = [...bD.topEmotions,...rD.topEmotions,...aD.topEmotions];
+    const tw = allE.map(e=>e.word), ut = new Set(tw);
+    const narrativeCoherence = clamp(ut.size<=3&&tw.length>5?80+(5-ut.size)*4:30+ut.size*2, 0, 100);
+
+    const hnResult = hnData.status==='fulfilled'?hnData.value:{headlines:[],sentiment:50,techMention:0};
+    const githubResult = githubData.status==='fulfilled'?githubData.value:{repos:[],activityScore:40};
+
+    const sentNorm=(100-sentiment)/100, marketNorm=Math.min(crypto.btc24hChange/15,1),
+          fgNorm=Math.abs(fearGreed.value-50)/50, socialNorm=socialEntropy/100,
+          geoNorm=geoRisk/100, techNorm=Math.abs((hnResult.sentiment||50)-50)/50;
+    const score = (0.25*sentNorm+0.20*marketNorm+0.20*fgNorm+0.15*socialNorm+0.10*geoNorm+0.10*techNorm)*100;
+
+    // Aggregate emotions
+    const aggE = {};
+    allE.forEach(e=>{const k=e.type+':'+e.word;if(aggE[k])aggE[k].count++;else aggE[k]={...e,count:1};});
+    const topGlobalEmotions = Object.values(aggE).sort((a,b)=>b.count-a.count).slice(0,8);
+
+    state.human = {
+      sentiment:Math.round(sentiment), marketVolatility:Math.round(crypto.btc24hChange*10)/10,
+      fearGreed, socialEntropy:Math.round(socialEntropy), conflictProxy:conflictCount,
+      score:Math.round(score*10)/10, crypto, headlineCount:allHeadlines.length,
+      geopoliticalRisk:Math.round(geoRisk), infoVelocity:Math.round(infoVelocity),
+      emotionalDiversity:Math.round(emotionalDiversity), narrativeCoherence:Math.round(narrativeCoherence),
+      techOptimism:Math.round(hnResult.sentiment||50), devActivity:Math.round(githubResult.activityScore||40),
+      activeSources, totalFear, totalHope, totalTech, totalEcon
+    };
+    state.headlines = allHeadlines.slice(0,12);
+    state.sourceSentiment = sources;
+    state.topEmotions = topGlobalEmotions;
+    state.hnHeadlines = (hnResult.headlines||[]).slice(0,5);
+    state.trendingRepos = (githubResult.repos||[]).slice(0,3);
+
+    state.srcOk += activeSources + (fearGreed.value!==50?1:0) + (crypto.btcPrice>0?1:0) + (hnResult.headlines?.length>0?1:0) + (githubResult.repos?.length>0?1:0);
+    state.srcTotal += 7;
+    $('humanSt').textContent = 'ОНЛАЙН';
+    addLog(`✓ HUMAN: Sen=${state.human.sentiment}, F&G=${fearGreed.value}, GeoRisk=${state.human.geopoliticalRisk}`);
+
+    if (sentiment < 30) alert(`[ALERT] КРИТИЧНИЙ НЕГАТИВНИЙ НАСТРІЙ ${sentiment}/100`, '#f04');
+    if (crypto.btc24hChange > 8) alert(`[WARN] РИНКОВА ВОЛАТИЛЬНІСТЬ ${crypto.btc24hChange.toFixed(1)}%`, '#fa0');
+  } catch(e) { addLog('⚠ HUMAN OFFLINE: '+e.message); $('humanSt').textContent = 'OFFLINE'; }
+  renderHuman(); renderSentimentAnatomy(); renderCrypto(); renderTechPulse(); renderNews();
+}
+
+async function fetchHN() {
+  try {
+    const r = await fetch('https://hacker-news.firebaseio.com/v0/topstories.json');
+    const ids = await r.json(); const top = ids.slice(0,10);
+    const stories = await Promise.allSettled(top.slice(0,5).map(id =>
+      fetch(`https://hacker-news.firebaseio.com/v0/item/${id}.json`).then(r=>r.json())
+    ));
+    const headlines = stories.filter(s=>s.status==='fulfilled'&&s.value?.title).map(s=>s.value.title);
+    return {headlines, sentiment:65, techMention:0};
+  } catch { return {headlines:[],sentiment:50,techMention:0}; }
+}
+
+async function fetchGitHub() {
+  try {
+    const d = new Date(Date.now()-86400000).toISOString().split('T')[0];
+    const r = await fetch(`https://api.github.com/search/repositories?q=created:>${d}&sort=stars&order=desc&per_page=5`);
+    const data = await r.json();
+    const repos = (data.items||[]).slice(0,3).map(i=>({name:i.full_name,stars:i.stargazers_count}));
+    return {repos, activityScore:clamp(repos.reduce((s,r)=>s+Math.min(r.stars/50,10),0),0,100)};
+  } catch { return {repos:[],activityScore:40}; }
+}
+
+// === RENDER ===
+function renderSpace() {
+  const s = state.space; if (!s) return;
+  $('spaceScore').textContent = s.score.toFixed(0); $('spaceScore').style.color = scoreColor(s.score);
+  $('sKp').textContent = s.kp.toFixed(2);
+  $('sSW').textContent = s.swSpeed.toFixed(0); if(s.swSpeed>700) $('sSW').classList.add('m-warn');
+  $('sDen').textContent = s.swDensity.toFixed(1);
+  $('sBz').textContent = s.bz.toFixed(2); if(Math.abs(s.bz)>10) $('sBz').classList.add('m-warn');
+  $('sBt').textContent = s.bt.toFixed(2);
+  $('sXray').textContent = s.xray.toFixed(2);
+  // Analysis
+  let a = '';
+  if (s.kp>=5) a+=`<b style="color:#f04">ГЕОМАГНІТНИЙ ШТОРМ Kp=${s.kp}</b>. Магнітосфера Землі під впливом. `;
+  else if (s.kp>=4) a+=`Помірна геомагнітна активність (Kp=${s.kp}). `;
+  else a+=`Магнітне поле спокійне (Kp=${s.kp}). `;
+  if (s.swSpeed>600) a+=`<b style="color:#f04">Високошвидкісний сонячний вітер ${s.swSpeed.toFixed(0)} км/с</b> — стиснення магнітосфери. `;
+  else a+=`Сонячний вітер ${s.swSpeed.toFixed(0)} км/с — норма. `;
+  if (s.bz<-5) a+=`Bz=${s.bz.toFixed(1)} nT (півдн.) — умови для підзарядження магнітосфери. `;
+  $('spaceAnalysis').innerHTML = a;
+}
+
+function renderEarthquakes() {
+  if (!state.earthquakes.length) return;
+  $('quakeList').innerHTML = state.earthquakes.map(e =>
+    `<div class="m-row"><span class="m-lbl" style="color:${e.mag>=5?'#f04':e.mag>=4?'#fa0':'#eef'}">M${e.mag.toFixed(1)}</span><span class="m-val" style="font-size:7px">${e.place.split(',').slice(-1)[0].trim()}</span></div>`
+  ).join('');
+}
+
+function renderEarth() {
+  const e = state.earth; if (!e) return;
+  $('earthScore').textContent = e.score.toFixed(0); $('earthScore').style.color = scoreColor(e.score);
+  $('eTemp').textContent = e.temp.toFixed(1)+'°C'; if(Math.abs(e.temp-15)>8) $('eTemp').classList.add('m-warn');
+  $('ePres').textContent = e.press.toFixed(0);
+  $('eHum').textContent = e.humidity.toFixed(0)+'%';
+  $('eWind').textContent = e.wind.toFixed(1);
+  $('eUV').textContent = e.uv.toFixed(1);
+  $('eCloud').textContent = e.cloudCover.toFixed(0)+'%';
+  $('ePrec').textContent = e.precipitation.toFixed(1);
+  $('eAQI').textContent = `${e.aqi} (${e.aqiCity})`; if(e.aqi>100) $('eAQI').classList.add('m-warn');
+  let a = `Середня температура планети: <b>${e.temp.toFixed(1)}°C</b> (еталон 15°C). `;
+  if (Math.abs(e.temp-15)>5) a += `Відхилення ${(e.temp-15>0?'+':'')}${(e.temp-15).toFixed(1)}°C — аномалія. `;
+  if (e.aqi>100) a += `<b style="color:#fa0">Погана якість повітря (AQI=${e.aqi}, ${e.aqiCity}).</b> `;
+  else a += `Якість повітря задовільна (AQI=${e.aqi}, ${e.aqiCity}). `;
+  a += `Вологість ${e.humidity.toFixed(0)}%, UV=${e.uv.toFixed(1)}, хмарність ${e.cloudCover.toFixed(0)}%.`;
+  $('earthAnalysis').innerHTML = a;
+}
+
+function renderHuman() {
+  const h = state.human; if (!h) return;
+  $('humanScore').textContent = h.score.toFixed(0); $('humanScore').style.color = scoreColor(h.score);
+  $('hSent').textContent = h.sentiment+'/100'; if(h.sentiment<30) $('hSent').classList.add('m-warn');
+  $('hVol').textContent = h.marketVolatility.toFixed(1)+'%'; if(h.marketVolatility>8) $('hVol').classList.add('m-warn');
+  $('hFG').textContent = `${h.fearGreed.value} (${h.fearGreed.classification})`;
+  $('hFG').style.color = h.fearGreed.value<=30?'#f04':h.fearGreed.value>=70?'#0fa':'#eef';
+  $('hGeo').textContent = h.geopoliticalRisk+'/100'; if(h.geopoliticalRisk>=50) $('hGeo').classList.add('m-warn');
+  $('hEnt').textContent = h.socialEntropy;
+  $('hConf').textContent = h.conflictProxy; if(h.conflictProxy>=5) $('hConf').classList.add('m-warn');
+  $('hVel').textContent = h.infoVelocity;
+  $('hDiv').textContent = h.emotionalDiversity+'%';
+  $('hCoh').textContent = h.narrativeCoherence+'%';
+  // Analysis
+  let a = '';
+  if (h.sentiment<30) a+=`<b style="color:#f04">КРИТИЧНИЙ НЕГАТИВ (${h.sentiment}/100)</b>: Домінують тривожні наративи (${h.totalFear} страх-тригерів). `;
+  else if (h.sentiment<45) a+=`<b style="color:#fa0">ПЕСИМІСТИЧНИЙ ФОН (${h.sentiment}/100)</b>: Страх/надія = ${h.totalFear}:${h.totalHope}. `;
+  else if (h.sentiment<60) a+=`<b style="color:#ff0">НЕЙТРАЛЬНИЙ БАЛАНС (${h.sentiment}/100)</b>: Страх=${h.totalFear}, Надія=${h.totalHope}. `;
+  else a+=`<b style="color:#0fa">ОПТИМІСТИЧНИЙ НАСТРІЙ (${h.sentiment}/100)</b>: ${h.totalHope} hope-тригерів. `;
+  if (h.geopoliticalRisk>=50) a+=`<b style="color:#f04">ВИСОКИЙ ГЕОПОЛІТИЧНИЙ РИЗИК: ${h.geopoliticalRisk}/100</b>. `;
+  if (h.narrativeCoherence>=70) a+=`Висока когерентність наративу — можливий інформаційний каскад. `;
+  else a+=`Різноманіття наративів (${h.narrativeCoherence}/100). `;
+  $('humanAnalysis').innerHTML = a;
+}
+
+function renderSentimentAnatomy() {
+  const h = state.human; if (!h) return;
+  // Emotion tags
+  const typeColors = {fear:'#f04',hope:'#0fa',tech:'#0af',economy:'#fa0'};
+  const typeBg = {fear:'rgba(255,0,68,.15)',hope:'rgba(0,255,170,.1)',tech:'rgba(0,170,255,.1)',economy:'rgba(255,170,0,.1)'};
+  $('emotionTags').innerHTML = '<div style="font-size:7px;color:#556;margin-bottom:3px;text-transform:uppercase;letter-spacing:1">Топ-емоції</div>'+
+    '<div style="display:flex;flex-wrap:wrap;gap:3px">'+state.topEmotions.map(e=>
+      `<span class="emo-tag" style="background:${typeBg[e.type]||'rgba(255,255,255,.05)'};color:${typeColors[e.type]||'#eef'};border:1px solid ${typeColors[e.type]||'#333'}33">${e.word} <span style="color:#556">×${e.count}</span></span>`
+    ).join('')+'</div>';
+  // Emotion bar
+  const total = Math.max(1, h.totalFear+h.totalHope+h.totalTech+h.totalEcon);
+  const pct = v => (v/total*100);
+  $('emotionBar').innerHTML = '<div style="font-size:7px;color:#556;margin-bottom:3px;text-transform:uppercase;letter-spacing:1">Розподіл тригерів</div>'+
+    '<div class="emo-bar">'+
+      `<div style="width:${pct(h.totalFear)}%;background:#f04;transition:width .5s"></div>`+
+      `<div style="width:${pct(h.totalHope)}%;background:#0fa;transition:width .5s"></div>`+
+      `<div style="width:${pct(h.totalTech)}%;background:#0af;transition:width .5s"></div>`+
+      `<div style="width:${pct(h.totalEcon)}%;background:#fa0;transition:width .5s"></div>`+
+    '</div>'+
+    `<div style="display:flex;gap:8px;margin-top:3px;font-size:7px">
+      <span style="color:#f48">Страх ${h.totalFear}</span>
+      <span style="color:#0fa">Надія ${h.totalHope}</span>
+      <span style="color:#0af">Техно ${h.totalTech}</span>
+      <span style="color:#fa0">Економіка ${h.totalEcon}</span>
+    </div>`;
+  // Source breakdown
+  const ss = state.sourceSentiment;
+  const labels = {bbc:'BBC World',reuters:'Reuters',aljazeera:'Al Jazeera'};
+  $('sourceBreakdown').innerHTML = '<div style="font-size:7px;color:#556;margin:6px 0 3px;text-transform:uppercase;letter-spacing:1">Джерела (клікабельно)</div>'+
+    ['bbc','reuters','aljazeera'].map(src=>{
+      const s = ss[src]; if(!s) return '';
+      const isOpen = state.expandedSrc===src;
+      const st = Math.max(1,s.fear+s.hope+s.tech+s.econ);
+      const sc = s.totalWords>0?Math.round(50-s.fear*3+s.hope*2.5):50;
+      const scCol = sc<40?'#f04':sc>60?'#0fa':'#ff0';
+      return `<div class="src-row" style="border-color:${isOpen?'rgba(100,100,255,.25)':'rgba(255,255,255,.03)'}">
+        <div class="src-header" onclick="toggleSrc('${src}')">
+          <span style="font-size:8px;color:${s.status?'#0ff':'#446'}">${s.status?'●':'○'} ${labels[src]}</span>
+          <span style="font-size:8px;color:${s.status?'#eef':'#446'}">${s.status?`F:${s.fear} H:${s.hope} T:${s.tech} E:${s.econ} [${s.headlines.length}]`:'OFFLINE'} ${isOpen?'▲':'▼'}</span>
+        </div>
+        <div class="src-body${isOpen?' open':''}">
+          <div class="emo-bar" style="margin-bottom:3px">
+            <div style="width:${s.fear/st*100}%;background:#f04"></div>
+            <div style="width:${s.hope/st*100}%;background:#0fa"></div>
+            <div style="width:${s.tech/st*100}%;background:#0af"></div>
+            <div style="width:${s.econ/st*100}%;background:#fa0"></div>
+          </div>
+          <div style="color:#99aabb;margin-bottom:2px">Сентимент: <b style="color:${scCol}">${sc}/100</b></div>
+          ${s.topEmotions.length?`<div style="color:#668">Ключові: ${s.topEmotions.map(e=>`<span style="color:${typeColors[e.type]||'#eef'};margin-right:4px">${e.word}</span>`).join('')}</div>`:''}
+          ${s.headlines.length?`<div style="margin-top:3px;max-height:60px;overflow-y:auto">${s.headlines.map(h=>`<div class="news-item">${h}</div>`).join('')}</div>`:''}
+        </div>
+      </div>`;
+    }).join('');
+  // Sentiment analysis text
+  let sa = '';
+  if (h.emotionalDiversity===100) sa+='Повна емоційна диференціація: всі 4 категорії присутні. ';
+  else if (h.emotionalDiversity===75) sa+='3 з 4 емоційних категорій активні. ';
+  else if (h.emotionalDiversity===50) sa+='Тільки 2 категорії активні — звуження фокусу уваги. ';
+  else sa+=`Емоційне поле звужене (${h.emotionalDiversity}/100). `;
+  sa += `Інформаційна швидкість: ${h.infoVelocity}/100. ${h.infoVelocity>60?'Високий потік новин — інформаційний шум.':'Нормальний потік.'}`;
+  $('sentimentAnalysis').innerHTML = sa;
+}
+
+function renderCrypto() {
+  const h = state.human; if (!h?.crypto) return;
+  const c = h.crypto;
+  $('cryptoLive').textContent = c.btcPrice>0?'LIVE':'—';
+  $('btcPrice').textContent = c.btcPrice>0?`$${(c.btcPrice/1000).toFixed(1)}K`:'--';
+  $('btcChange').textContent = `24h: ${c.btc24hChange.toFixed(2)}%`;
+  $('btcChange').style.color = c.btc24hChange>5?'#f04':'#0fa';
+  $('btcMcap').textContent = c.btcMcap>0?`MCap: $${(c.btcMcap/1e12).toFixed(2)}T`:'';
+  $('ethPrice').textContent = c.ethPrice>0?`$${(c.ethPrice/1000).toFixed(2)}K`:'--';
+  $('ethChange').textContent = `24h: ${c.eth24hChange.toFixed(2)}%`;
+  $('ethChange').style.color = c.eth24hChange>5?'#f04':'#0fa';
+  $('ethMcap').textContent = c.ethMcap>0?`MCap: $${(c.ethMcap/1e12).toFixed(2)}T`:'';
+  $('totalMcap').textContent = c.totalMcap>0?`$${(c.totalMcap/1e12).toFixed(2)}T`:'--';
+  $('totalVol').textContent = c.totalVolume24h>0?`$${(c.totalVolume24h/1e9).toFixed(0)}B`:'--';
+  $('btcDom').textContent = c.btcDominance>0?c.btcDominance.toFixed(1)+'%':'--';
+  let a = c.btc24hChange>5
+    ? `BTC ${(c.btcPrice/1000).toFixed(1)}K, волатильність ${c.btc24hChange.toFixed(1)}%. ${c.btcDominance>55?'BTC-домінація висока — інвестори шукають безпеку.':'Альткоїни отримують капітал.'}`
+    : `Крипторинок стабільний. BTC ${(c.btcPrice/1000).toFixed(1)}K, ETH ${(c.ethPrice/1000).toFixed(2)}K.`;
+  a += ` F&G ${h.fearGreed.value} (${h.fearGreed.classification}).`;
+  $('cryptoAnalysis').innerHTML = a;
+}
+
+function renderTechPulse() {
+  const h = state.human; if (!h) return;
+  $('techOpt').textContent = h.techOptimism+'/100';
+  $('techOpt').style.color = h.techOptimism>60?'#0fa':'#eef';
+  $('devAct').textContent = h.devActivity+'/100';
+  $('devAct').style.color = h.devActivity>60?'#0af':'#eef';
+  // Trending repos
+  if (state.trendingRepos.length) {
+    $('trendingRepos').innerHTML = '<div style="font-size:7px;color:#556;margin:4px 0 2px;text-transform:uppercase;letter-spacing:1">GitHub Trending (24h)</div>'+
+      state.trendingRepos.map((r,i)=>`<div class="m-row" style="border:none"><span class="m-lbl" style="max-width:70%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${r.name}">#${i+1} ${r.name}</span><span class="m-val" style="color:#ff0;font-size:7px">★${r.stars}</span></div>`).join('');
+  }
+  // HN headlines
+  if (state.hnHeadlines.length) {
+    $('hnHeadlines').innerHTML = `<div onclick="toggleHN()" style="font-size:7px;color:#556;margin-top:2px;text-transform:uppercase;letter-spacing:1;cursor:pointer">HackerNews Top ${state.hnHeadlines.length} ${state.expandedHN?'▲':'▼'}</div>`+
+      (state.expandedHN?`<div style="max-height:80px;overflow-y:auto">${state.hnHeadlines.map(h=>`<div class="news-item" style="border-left-color:#0af">${h}</div>`).join('')}</div>`:'');
+  }
+  let a = h.techOptimism>60
+    ? `Технологічний оптимізм високий (${h.techOptimism}/100). Tech-сектор драйвер позитиву. `
+    : h.techOptimism>40
+    ? `Технологічний настрій нейтральний (${h.techOptimism}/100). `
+    : `Технологічний песимізм (${h.techOptimism}/100). `;
+  a += `Dev activity: ${h.devActivity}/100. ${h.devActivity>60?'Висока активність — інноваційний потік сильний.':'Нормальний рівень.'}`;
+  $('techAnalysis').innerHTML = a;
+}
+
+function renderNews() {
+  if (!state.headlines.length) return;
+  $('newsList').innerHTML = state.headlines.slice(0,10).map(h=>`<div class="news-item">${h}</div>`).join('');
+}
+
+function renderAnalytics() {
+  const h = state.history;
+  if (h.length < 2) return;
+  const ibo = h.map(p=>p.ibonarium), spa = h.map(p=>p.space), ear = h.map(p=>p.earth), hum = h.map(p=>p.human);
+  const avg = arr => arr.reduce((a,b)=>a+b,0)/arr.length;
+  const iboAvg = avg(ibo), iboDev = Math.sqrt(ibo.reduce((s,v)=>s+(v-iboAvg)**2,0)/ibo.length);
+  $('avgIdx').textContent = iboAvg.toFixed(1);
+  $('devIdx').textContent = iboDev.toFixed(1);
+  const trend = linearTrend(ibo);
+  $('trendIdx').textContent = trend;
+  $('trendIdx').style.color = trend.includes('UP')?'#f04':trend.includes('DOWN')?'#0fa':'#eef';
+  $('dataPts').textContent = h.length;
+  const sT = linearTrend(spa), eT = linearTrend(ear), hT = linearTrend(hum);
+  $('spaceTrend').textContent = avg(spa).toFixed(1)+' '+sT;
+  $('spaceTrend').style.color = sT.includes('UP')?'#f04':sT.includes('DOWN')?'#0fa':'#eef';
+  $('earthTrend').textContent = avg(ear).toFixed(1)+' '+eT;
+  $('earthTrend').style.color = eT.includes('UP')?'#f04':eT.includes('DOWN')?'#0fa':'#eef';
+  $('humanTrend').textContent = avg(hum).toFixed(1)+' '+hT;
+  $('humanTrend').style.color = hT.includes('UP')?'#f04':hT.includes('DOWN')?'#0fa':'#eef';
+  let a = iboDev>15?`⚠️ ВИСОКА ВОЛАТИЛЬНІСТЬ (σ=${iboDev.toFixed(1)}). `
+    :iboDev>8?`Помірна мінливість (σ=${iboDev.toFixed(1)}). `
+    :`Низька мінливість (σ=${iboDev.toFixed(1)}). `;
+  a += `Тренд: ${trend}. Space ${sT}, Earth ${eT}, Human ${hT}.`;
+  $('analyticsText').innerHTML = a;
+}
+
+// === INTERACTIVITY ===
+function toggleSrc(name) { state.expandedSrc = state.expandedSrc===name?null:name; renderSentimentAnatomy(); }
+function toggleHN() { state.expandedHN = !state.expandedHN; renderTechPulse(); }
+
+// === IBONARIUM CALC ===
+function calcIbonarium() {
+  if (state.space && state.earth && state.human) {
+    const ibo = 0.4*state.space.score + 0.3*state.earth.score + 0.3*state.human.score;
+    state.ibonarium = Math.round(ibo*10)/10;
+    $('ibonariumIdx').textContent = state.ibonarium.toFixed(1);
+    $('ibonariumIdx').style.color = scoreColor(state.ibonarium);
+    $('srcCount').textContent = `${state.srcOk}/${state.srcTotal}`;
+    // History
+    state.history.push({t:Date.now(), space:state.space.score, earth:state.earth.score, human:state.human.score, ibonarium:state.ibonarium});
+    if (state.history.length > MAX_HISTORY) state.history.shift();
+    try { localStorage.setItem('ibonarium-history', JSON.stringify(state.history)); } catch {}
+    renderAnalytics();
+  }
+}
+
+// === 3D SPHERE ===
+function initSphere() {
+  const canvas = $('sphere');
+  const col = canvas.parentElement;
+  function resize() { canvas.width = col.clientWidth; canvas.height = col.clientHeight; }
+  resize(); window.addEventListener('resize', resize);
+  const ctx = canvas.getContext('2d');
+  const pts = Array.from({length:400},()=>({
+    th:Math.random()*Math.PI*2, ph:Math.acos(2*Math.random()-1),
+    r:120+Math.random()*30, sc:0.3+Math.random()*0.7, sx:0, sy:0
+  }));
+  let rot = 0;
+  function frame() {
+    const w=canvas.width, h=canvas.height, cx=w/2, cy=h/2;
+    ctx.clearRect(0,0,w,h);
+    const sw = state.space?.swSpeed || 400;
+    rot += 0.001 + sw/300000;
+    const pulse = 1 + Math.sin(Date.now()/800)*0.05;
+    for (const p of pts) {
+      p.th += rot; p.sx = cx + p.r*p.sc*pulse*Math.sin(p.ph)*Math.cos(p.th);
+      p.sy = cy + p.r*p.sc*pulse*Math.cos(p.ph);
+    }
+    ctx.strokeStyle = 'rgba(100,100,255,0.04)'; ctx.lineWidth = 0.5;
+    for (const p of pts) {
+      for (let j=1;j<=3;j++) {
+        const n=pts[(pts.indexOf(p)+j)%pts.length];
+        const dx=p.sx-n.sx, dy=p.sy-n.sy;
+        if(dx*dx+dy*dy<2500*p.sc){ctx.beginPath();ctx.moveTo(p.sx,p.sy);ctx.lineTo(n.sx,n.sy);ctx.stroke();}
+      }
+    }
+    for (const p of pts) {
+      const a=Math.max(0.1,p.sc*0.8), sz=Math.max(0.5,2*p.sc);
+      let r=180,g=180,b=255;
+      const ibo = state.ibonarium;
+      if(ibo<30){r=255;g=60;b=60;}else if(ibo<50){r=255;g=170;b=0;}else if(ibo>70){r=60;g=255;b=160;}
+      ctx.fillStyle=`rgba(${r},${g},${b},${a})`;ctx.beginPath();ctx.arc(p.sx,p.sy,sz,0,Math.PI*2);ctx.fill();
+    }
+    const cs=30*pulse, glow=ctx.createRadialGradient(cx,cy,0,cx,cy,cs*3);
+    glow.addColorStop(0,`rgba(0,255,255,${0.15+state.ibonarium/500})`);glow.addColorStop(1,'rgba(0,0,0,0)');
+    ctx.fillStyle=glow;ctx.fillRect(0,0,w,h);
+    // History lines
+    if (state.history.length>2) {
+      const gH=80, gY=h-100;
+      const drawLine=(key,color)=>{ctx.strokeStyle=color;ctx.lineWidth=1;ctx.beginPath();
+        state.history.forEach((pt,i)=>{const x=(i/MAX_HISTORY)*w*0.6+w*0.2,y=gY+gH-(pt[key]/100)*gH;
+          i===0?ctx.moveTo(x,y):ctx.lineTo(x,y);});ctx.stroke();};
+      drawLine('ibonarium','rgba(160,0,255,0.5)');drawLine('earth','rgba(0,170,255,0.2)');drawLine('human','rgba(255,0,255,0.2)');
+    }
+    requestAnimationFrame(frame);
+  }
+  frame();
+}
+
+// === BG STARS ===
+function initBG() {
+  const c=$('bg'), ctx=c.getContext('2d');
+  c.width=window.innerWidth; c.height=window.innerHeight;
+  window.addEventListener('resize',()=>{c.width=window.innerWidth;c.height=window.innerHeight;});
+  const stars=Array.from({length:200},()=>({x:Math.random()*c.width,y:Math.random()*c.height,s:Math.random()*1.5,a:Math.random()}));
+  function draw(){ctx.clearRect(0,0,c.width,c.height);
+    stars.forEach(s=>{s.a+=0.003;if(s.a>1)s.a=0;
+      ctx.fillStyle=`rgba(200,200,255,${s.a*0.5})`;ctx.beginPath();ctx.arc(s.x,s.y,s.s,0,Math.PI*2);ctx.fill();});
+    requestAnimationFrame(draw);}draw();
+}
+
+// === INIT ===
+function loadHistory() {
+  try { const s=localStorage.getItem('ibonarium-history');
+    if(s){const p=JSON.parse(s);if(p.length){state.history=p.slice(-MAX_HISTORY);state.ibonarium=p[p.length-1].ibonarium;
+      $('ibonariumIdx').textContent=state.ibonarium.toFixed(1);$('ibonariumIdx').style.color=scoreColor(state.ibonarium);}}}
+  catch{}
+}
+
+async function fetchAll() { await Promise.allSettled([fetchSpace(),fetchEarth(),fetchHuman()]); calcIbonarium(); }
+function startClock() { $('clock').textContent=new Date().toLocaleTimeString('uk-UA',{timeZone:'UTC'}); setInterval(()=>$('clock').textContent=new Date().toLocaleTimeString('uk-UA',{timeZone:'UTC'}),1000); }
+
+loadHistory(); startClock(); initSphere(); initBG(); fetchAll();
+setInterval(fetchSpace, 60000);
+setInterval(fetchEarth, 300000);
+setInterval(fetchHuman, 600000);
+setInterval(calcIbonarium, 10000);
+</script>
+</body>
+</html>
