@@ -370,17 +370,24 @@ async function fetchEarth() {
       '&current=temperature_2m,relative_humidity_2m,surface_pressure,wind_speed_10m,uv_index,precipitation,cloud_cover'+
       '&timezone=UTC';
     const d = await fetchJSON(url);
-    if (!d || !d.current) throw new Error('No data');
-    const c = d.current;
-    const n = cities.length;
+    // Open-Meteo returns array of per-city objects when multiple locations queried
+    let temps=[], pressArr=[], humArr=[], windArr=[], uvArr=[], precArr=[], cloudArr=[];
+    const responses = Array.isArray(d) ? d : [d];
+    for (const r of responses) {
+      if (!r.current) continue;
+      const c = r.current;
+      temps.push(c.temperature_2m); pressArr.push(c.surface_pressure);
+      humArr.push(c.relative_humidity_2m); windArr.push(c.wind_speed_10m);
+      uvArr.push(c.uv_index||0); precArr.push(c.precipitation||0); cloudArr.push(c.cloud_cover);
+    }
+    if (!temps.length) throw new Error('No city data in response');
     const avg = (arr) => arr.reduce((a,b)=>a+b,0)/arr.length;
-    const temp = avg(c.temperature_2m);
-    const press = avg(c.surface_pressure);
-    const hum = avg(c.relative_humidity_2m);
-    const wind = avg(c.wind_speed_10m);
-    const uv = avg(c.uv_index);
-    const prec = avg(c.precipitation);
-    const cloud = avg(c.cloud_cover);
+    const temp = avg(temps), press = avg(pressArr), hum = avg(humArr);
+    const wind = avg(windArr), uv = avg(uvArr), prec = avg(precArr), cloud = avg(cloudArr);
+    // Per-city detail for analysis
+    state.cityData = responses.map((r,i) => ({
+      name: cities[i]?.name||'?', temp: r.current?.temperature_2m, hum: r.current?.relative_humidity_2m
+    })).filter(c => c.temp != null);
     // AQI — WAQI supports CORS, try Kyiv then fallback
     let aqi = 50, aqiCity = 'Kyiv';
     try {
@@ -396,10 +403,10 @@ async function fetchEarth() {
     const score = clamp(
       (Math.abs(temp-15)/15*25 + Math.abs(press-1013)/30*25 + aqi/300*25 + wind/50*25), 0, 100
     );
-    state.earth = { temp, press, humidity: hum, wind, uv, precipitation: prec, cloudCover: cloud, aqi, aqiCity, score };
+    state.earth = { temp, press, humidity: hum, wind, uv, precipitation: prec, cloudCover: cloud, aqi, aqiCity, score, tempRange: Math.max(...temps)-Math.min(...temps), tempMax: Math.max(...temps), tempMin: Math.min(...temps), pressRange: Math.max(...pressArr)-Math.min(...pressArr) };
     $('earthSt').textContent = 'ОНЛАЙН';
     state.srcOk += 1; state.srcTotal += 1;
-    addLog(`✓ EARTH: T=${temp.toFixed(1)}°C, AQI=${aqi}`);
+    addLog(`✓ EARTH: T=${temp.toFixed(1)}°C (Δ${state.earth.tempRange.toFixed(1)}°), P=${press.toFixed(0)}hPa, AQI=${aqi}`);
   } catch(e) { addLog('⚠ EARTH OFFLINE: '+e.message); $('earthSt').textContent = 'OFFLINE'; }
   renderEarth();
 }
@@ -563,14 +570,32 @@ function renderSpace() {
   $('sBz').textContent = s.bz.toFixed(2); if(Math.abs(s.bz)>10) $('sBz').classList.add('m-warn');
   $('sBt').textContent = s.bt.toFixed(2);
   $('sXray').textContent = s.xray.toFixed(2);
-  // Analysis
+  // Analysis — extended
   let a = '';
-  if (s.kp>=5) a+=`<b style="color:#f04">ГЕОМАГНІТНИЙ ШТОРМ Kp=${s.kp}</b>. Магнітосфера Землі під впливом. `;
-  else if (s.kp>=4) a+=`Помірна геомагнітна активність (Kp=${s.kp}). `;
-  else a+=`Магнітне поле спокійне (Kp=${s.kp}). `;
-  if (s.swSpeed>600) a+=`<b style="color:#f04">Високошвидкісний сонячний вітер ${s.swSpeed.toFixed(0)} км/с</b> — стиснення магнітосфери. `;
-  else a+=`Сонячний вітер ${s.swSpeed.toFixed(0)} км/с — норма. `;
-  if (s.bz<-5) a+=`Bz=${s.bz.toFixed(1)} nT (півдн.) — умови для підзарядження магнітосфери. `;
+  // Kp assessment
+  if (s.kp>=7) a+=`<b style="color:#f04">■ СИЛЬНИЙ ГЕОМАГНІТНИЙ ШТОРМ Kp=${s.kp.toFixed(1)}</b> — полярні сяйва до 40° широти, можливі перебої зв'язку та навігації. Магнітосфера під сильним стисненням. `;
+  else if (s.kp>=5) a+=`<b style="color:#f04">■ ГЕОМАГНІТНИЙ ШТОРМ Kp=${s.kp.toFixed(1)}</b> — помірна геомагнітна буря. Полярні сяйва видимі на високих широтах, можливі індуковані струми в лініях електропередач. `;
+  else if (s.kp>=4) a+=`<b style="color:#fa0">■ Помірна геомагнітна активність Kp=${s.kp.toFixed(1)}</b> — нестабільність магнітосфери, збільшена ймовірність суббурь. `;
+  else a+=`Магнітне поле Землі <b style="color:#0fa">спокійне</b> (Kp=${s.kp.toFixed(1)}). Геомагнітні умови номінальні, вплив на технологічну інфраструктуру мінімальний. `;
+  // Solar wind
+  if (s.swSpeed>700) a+=`<br><b style="color:#f04">Високошвидкісний потік ${s.swSpeed.toFixed(0)} км/с</b> — екстремальне стиснення магнітосфери, магнітопауза можливо зміщена до геосинхронної орбіти. `;
+  else if (s.swSpeed>500) a+=`<br>Сонячний вітер <b style="color:#fa0">підвищений</b> (${s.swSpeed.toFixed(0)} км/с) — швидкість вище медіани, динамічний тиск на магнітосферу посилений. `;
+  else a+=`<br>Сонячний вітер ${s.swSpeed.toFixed(0)} км/с — у межах фонових значень (300-500 км/с). `;
+  // Bz component
+  if (s.bz<-10) a+=`<b style="color:#f04">Bz=${s.bz.toFixed(1)} nT (різко південне)</b> — інтенсивне reconnecting, висока ймовірність суббурової активності та полярних сяйв. `;
+  else if (s.bz<-5) a+=`Bz=${s.bz.toFixed(1)} nT (південне відхилення) — сприятливі умови для передачі енергії сонячного вітру в магнітосферу. `;
+  else if (s.bz>5) a+=`Bz=${s.bz.toFixed(1)} nT (північне) — магнітосфера захищена. `;
+  else a+=`Bz=${s.bz.toFixed(1)} nT — компонента близька до нуля, нейтральне магнітне поле. `;
+  // Magnetic pressure
+  a += `<br>Магнітний тиск: Bt=${s.bt.toFixed(1)} nT. `;
+  if (s.bt>15) a+=`<b style="color:#fa0">Підвищений</b> — стиснений магнітний хвіст. `;
+  // X-ray
+  const xClass = s.xray>-4?'X':s.xray>-5?'M':s.xray>-6?'C':s.xray>-7?'B':'A';
+  a += `<br>Рентгенівське випромінювання: клас <b>${xClass}</b> (log=${s.xray.toFixed(2)}). `;
+  if (s.xray>-5) a+=`<b style="color:#f04">Активний сонячний спалах</b> — можливі радіоперебої на денній стороні Землі. `;
+  else a+=`Сонячна активність низька, потік у межах фонового рівня. `;
+  // Overall space summary
+  a += `<br><span style="color:#556">Космічна нервова система: ${s.alerts.length?'АКТИВНІ ТРИВОГИ ('+s.alerts.join(', ')+')':'стабільний режим, вплив на біосферу мінімальний'}.</span>`;
   $('spaceAnalysis').innerHTML = a;
 }
 
@@ -592,11 +617,39 @@ function renderEarth() {
   $('eCloud').textContent = e.cloudCover.toFixed(0)+'%';
   $('ePrec').textContent = e.precipitation.toFixed(1);
   $('eAQI').textContent = `${e.aqi} (${e.aqiCity})`; if(e.aqi>100) $('eAQI').classList.add('m-warn');
-  let a = `Середня температура планети: <b>${e.temp.toFixed(1)}°C</b> (еталон 15°C). `;
-  if (Math.abs(e.temp-15)>5) a += `Відхилення ${(e.temp-15>0?'+':'')}${(e.temp-15).toFixed(1)}°C — аномалія. `;
-  if (e.aqi>100) a += `<b style="color:#fa0">Погана якість повітря (AQI=${e.aqi}, ${e.aqiCity}).</b> `;
-  else a += `Якість повітря задовільна (AQI=${e.aqi}, ${e.aqiCity}). `;
-  a += `Вологість ${e.humidity.toFixed(0)}%, UV=${e.uv.toFixed(1)}, хмарність ${e.cloudCover.toFixed(0)}%.`;
+  let a = `Глобальна температура (8 точок): <b>${e.temp.toFixed(1)}°C</b> (еталон 15°C). `;
+  a += `Діапазон: ${e.tempMin.toFixed(1)}°C — ${e.tempMax.toFixed(1)}°C (Δ${e.tempRange.toFixed(1)}°). `;
+  if (e.tempRange>30) a+=`<b style="color:#fa0">Екстремальний температурний контраст</b> — потужні атмосферні фронти, висока ймовірність циклогенезу. `;
+  else if (e.tempRange>20) a+=`Значний температурний градієнт між північчю та півднем. `;
+  if (Math.abs(e.temp-15)>8) a += `<br><b style="color:#f04">Температурна аномалія: ${(e.temp-15>0?'+':'')}${(e.temp-15).toFixed(1)}°C від еталону</b> — значне відхилення від кліматичної норми. `;
+  else if (Math.abs(e.temp-15)>5) a += `<br>Помірне відхилення ${(e.temp-15>0?'+':'')}${(e.temp-15).toFixed(1)}°C — слідкувати за тенденцією. `;
+  else a += `<br>Температура в межах кліматичної норми. `;
+  // Pressure analysis
+  a += `<br>Атмосферний тиск: ${e.press.toFixed(0)} hPa (норма 1013). `;
+  if (Math.abs(e.press-1013)>15) a+=`<b style="color:#fa0">Відхилення ${(e.press-1013>0?'+':'')}${(e.press-1013).toFixed(0)} hPa</b> — можливі зміни погодних патернів. `;
+  // Humidity
+  a += `<br>Вологість: ${e.humidity.toFixed(0)}%. `;
+  if (e.humidity>70) a+=`<b style="color:#fa0">Підвищена вологість</b> — комфорт знижений, можлива конденсація. `;
+  else if (e.humidity<30) a+=`Низька вологість — підвищений ризик пожеж та статичної електрики. `;
+  // Wind
+  a += `Вітер: ${e.wind.toFixed(1)} км/с. `;
+  if (e.wind>40) a+=`<b style="color:#fa0">Посилений вітер</b>. `;
+  // UV
+  a += `<br>UV-індекс: ${e.uv.toFixed(1)}. `;
+  if (e.uv>8) a+=`<b style="color:#f04">Дуже високий UV</b> — небезпечно для шкіри. `;
+  else if (e.uv>5) a+=`Помірний UV. `;
+  // Cloud & precip
+  a += `Хмарність: ${e.cloudCover.toFixed(0)}%, опади: ${e.precipitation.toFixed(1)} мм. `;
+  // AQI
+  if (e.aqi>150) a += `<br><b style="color:#f04">■ НЕБЕЗПЕЧНА ЯКІСТЬ ПОВІТРЯ (AQI=${e.aqi}, ${e.aqiCity})</b> — вплив на здоров'я. `;
+  else if (e.aqi>100) a += `<br><b style="color:#fa0">Погана якість повітря (AQI=${e.aqi}, ${e.aqiCity}).</b> `;
+  else a += `<br>Якість повітря: AQI=${e.aqi} (${e.aqiCity}) — задовільна. `;
+  // City breakdown
+  if (state.cityData && state.cityData.length) {
+    const hottest = [...state.cityData].sort((a,b)=>b.temp-a.temp)[0];
+    const coldest = [...state.cityData].sort((a,b)=>a.temp-b.temp)[0];
+    a += `<br><span style="color:#556">Найтепліше: ${hottest.name} ${hottest.temp.toFixed(1)}°C, найхолодніше: ${coldest.name} ${coldest.temp.toFixed(1)}°C.</span>`;
+  }
   $('earthAnalysis').innerHTML = a;
 }
 
@@ -613,15 +666,36 @@ function renderHuman() {
   $('hVel').textContent = h.infoVelocity;
   $('hDiv').textContent = h.emotionalDiversity+'%';
   $('hCoh').textContent = h.narrativeCoherence+'%';
-  // Analysis
+  // Analysis — extended deep narrative
   let a = '';
-  if (h.sentiment<30) a+=`<b style="color:#f04">КРИТИЧНИЙ НЕГАТИВ (${h.sentiment}/100)</b>: Домінують тривожні наративи (${h.totalFear} страх-тригерів). `;
-  else if (h.sentiment<45) a+=`<b style="color:#fa0">ПЕСИМІСТИЧНИЙ ФОН (${h.sentiment}/100)</b>: Страх/надія = ${h.totalFear}:${h.totalHope}. `;
-  else if (h.sentiment<60) a+=`<b style="color:#ff0">НЕЙТРАЛЬНИЙ БАЛАНС (${h.sentiment}/100)</b>: Страх=${h.totalFear}, Надія=${h.totalHope}. `;
-  else a+=`<b style="color:#0fa">ОПТИМІСТИЧНИЙ НАСТРІЙ (${h.sentiment}/100)</b>: ${h.totalHope} hope-тригерів. `;
-  if (h.geopoliticalRisk>=50) a+=`<b style="color:#f04">ВИСОКИЙ ГЕОПОЛІТИЧНИЙ РИЗИК: ${h.geopoliticalRisk}/100</b>. `;
-  if (h.narrativeCoherence>=70) a+=`Висока когерентність наративу — можливий інформаційний каскад. `;
-  else a+=`Різноманіття наративів (${h.narrativeCoherence}/100). `;
+  // Sentiment assessment
+  if (h.sentiment<20) a+=`<b style="color:#f04">■ КРИТИЧНИЙ НЕГАТИВНИЙ НАСТРІЙ (${h.sentiment}/100)</b> — інформаційне поле насичене загрозами. ${h.totalFear} страх-тригерів проти ${h.totalHope} надії. Колективна психіка в стані тривоги, рішення схильні до панічних. `;
+  else if (h.sentiment<30) a+=`<b style="color:#f04">■ ПЕСИМІСТИЧНИЙ НАСТРІЙ (${h.sentiment}/100)</b> — домінують тривожні наративи (${h.totalFear} страх-тригерів). Медіа-простір створює атмосферу невизначенності. `;
+  else if (h.sentiment<45) a+=`<b style="color:#fa0">■ ЗНИЖЕНИЙ НАСТРІЙ (${h.sentiment}/100)</b> — баланс зміщений в бік страху. Страх/надія = ${h.totalFear}:${h.totalHope}. Соціум обережний, інвестиційний апетит знижений. `;
+  else if (h.sentiment<60) a+=`<b style="color:#ff0">■ НЕЙТРАЛЬНИЙ БАЛАНС (${h.sentiment}/100)</b> — інформаційне поле збалансоване. Страх=${h.totalFear}, Надія=${h.totalHope}. Когнітивне середовище стабільне. `;
+  else if (h.sentiment<75) a+=`<b style="color:#0fa">■ ОПТИМІСТИЧНИЙ НАСТРІЙ (${h.sentiment}/100)</b> — ${h.totalHope} hope-тригерів, позитивні наративи домінують. Соціум відкритий до інновацій та ризиків. `;
+  else a+=`<b style="color:#0fa">■ ВИСОКИЙ ОПТИМІЗМ (${h.sentiment}/100)</b> — колективна euphoria. ${h.totalHope} hope-тригерів. Можливий надмірний оптимізм (bubble-ментальність). `;
+  // Geopolitical deep dive
+  a += `<br><span style="color:#556">Геополітичний вимір:</span> `;
+  if (h.geopoliticalRisk>=70) a+=`<b style="color:#f04">ЕКСТРЕМАЛЬНИЙ РИЗИК (${h.geopoliticalRisk}/100)</b> — ${h.conflictProxy} конфлікт-тригерів. Ймовірність ескалації висока. `;
+  else if (h.geopoliticalRisk>=40) a+=`<b style="color:#fa0">Підвищений ризик (${h.geopoliticalRisk}/100)</b> — ${h.conflictProxy} конфлікт-маркерів в новинах. `;
+  else a+=`Ризик низький (${h.geopoliticalRisk}/100), ${h.conflictProxy} конфлікт-згадок. `;
+  // Narrative coherence
+  a += `<br><span style="color:#556">Наративна структура:</span> `;
+  if (h.narrativeCoherence>=70) a+=`Висока когерентність (${h.narrativeCoherence}/100) — медіа-простір фокусується на 2-3 темах, можливий <b>інформаційний каскад</b>. Увага концентрована, але критичне мислення може бути пригнічене. `;
+  else if (h.narrativeCoherence>=40) a+=`Помірна когерентність (${h.narrativeCoherence}/100) — увага розподілена між кількома наративами. Багатоточкове фокусування. `;
+  else a+=`Низька когерентність (${h.narrativeCoherence}/100) — фрагментоване інформаційне поле, увага розсіяна. `;
+  // Social entropy & info velocity
+  a += `<br><span style="color:#556">Інформаційна динаміка:</span> Ентропія=${h.socialEntropy}/100, Швидкість=${h.infoVelocity}/100. `;
+  if (h.infoVelocity>60) a+=`<b style="color:#fa0">Високошвидкісний інформаційний потік</b> — новини генеруються швидше ніж соціум їх обробляє. Ризик інформаційної перевантаженості. `;
+  else if (h.infoVelocity>30) a+=`Активний потік новин, але в межах оброблювальної здатності. `;
+  else a+=`Повільний інформаційний потік. `;
+  // Emotional diversity
+  a += `<br><span style="color:#556">Емоційна диференціація:</span> ${h.emotionalDiversity}/100. `;
+  const activeCats = [h.totalFear>0?1:0,h.totalHope>0?1:0,h.totalTech>0?1:0,h.totalEcon>0?1:0].reduce((a,b)=>a+b,0);
+  a += `${activeCats}/4 категорій активні. `;
+  if (activeCats<=1) a+=`<b style="color:#fa0">Емоційний моноблок</b> — поле звужене до однієї домінанти, когнітивна різноманітність обмежена. `;
+  else if (activeCats>=3) a+=`Багатовимірне емоційне поле — адаптивність колективної свідомості висока. `;
   $('humanAnalysis').innerHTML = a;
 }
 
@@ -678,13 +752,38 @@ function renderSentimentAnatomy() {
         </div>
       </div>`;
     }).join('');
-  // Sentiment analysis text
+  // Sentiment analysis text — extended
   let sa = '';
-  if (h.emotionalDiversity===100) sa+='Повна емоційна диференціація: всі 4 категорії присутні. ';
-  else if (h.emotionalDiversity===75) sa+='3 з 4 емоційних категорій активні. ';
-  else if (h.emotionalDiversity===50) sa+='Тільки 2 категорії активні — звуження фокусу уваги. ';
-  else sa+=`Емоційне поле звужене (${h.emotionalDiversity}/100). `;
-  sa += `Інформаційна швидкість: ${h.infoVelocity}/100. ${h.infoVelocity>60?'Високий потік новин — інформаційний шум.':'Нормальний потік.'}`;
+  const fearHopeRatio = h.totalHope>0 ? (h.totalFear/h.totalHope).toFixed(1) : '∞';
+  sa += `<span style="color:#556">Співвідношення страх/надія:</span> <b>${fearHopeRatio}:1</b>. `;
+  if (parseFloat(fearHopeRatio)>3) sa+=`<b style="color:#f04">Критичний перекос в бік страху</b> — медіа-дієта агресивна, вплив на психічне здоров'я. `;
+  else if (parseFloat(fearHopeRatio)>1.5) sa+=`Страх переважає, але в межах нормативного діапазону. `;
+  else sa+=`Баланс зміщений в бік надії — сприятливе когнітивне середовище. `;
+  // Source reliability
+  const activeSrc = [ss.bbc,ss.reuters,ss.aljazeera].filter(s=>s&&s.headlines.length>0).length;
+  sa += `<br><span style="color:#556">Активних джерел:</span> ${activeSrc}/3. `;
+  if (activeSrc<2) sa+=`<b style="color:#fa0">Менше половини джерел доступні</b> — аналіз може бути неповним. `;
+  // Category analysis
+  if (h.emotionalDiversity===100) sa+=`<br>Повна емоційна диференціація: всі 4 категорії (страх, надія, техно, економіка) присутні. Інформаційне поле багатовимірне. `;
+  else if (h.emotionalDiversity===75) sa+=`<br>3 з 4 емоційних категорій активні — помірне звуження фокусу. `;
+  else if (h.emotionalDiversity===50) sa+=`<br>Тільки 2 категорії активні — <b>звуження фокусу уваги</b>, можливе спотворення пріоритетів. `;
+  else sa+=`<br><b style="color:#fa0">Емоційне поле звужене (${h.emotionalDiversity}/100)</b> — монокатегорійний фокус. `;
+  // Info velocity deep
+  sa += `<br>Інформаційна швидкість: ${h.infoVelocity}/100. `;
+  if (h.infoVelocity>60) sa+=`<b style="color:#fa0">Високий потік новин</b> — ${h.headlineCount} заголовків з ${activeSrc} джерел. Інформаційний шум може маскувати сигнали. Рекомендовано фільтрування. `;
+  else if (h.infoVelocity>30) sa+=`Нормальний потік (${h.headlineCount} заголовків). `;
+  else sa+=`Повільний інформаційний потік — можливо нічний цикл або вихідні. `;
+  // Cross-source consistency
+  const srcScores = [ss.bbc,ss.reuters,ss.aljazeera].filter(s=>s&&s.totalWords>0).map(s=>{
+    const st = Math.max(1,s.fear+s.hope+s.tech+s.econ);
+    return Math.round(50-s.fear*3+s.hope*2.5);
+  });
+  if (srcScores.length>=2) {
+    const maxDiff = Math.max(...srcScores)-Math.min(...srcScores);
+    sa += `<br><span style="color:#556">Консистентність джерел:</span> розбіжність ${maxDiff} пунктів. `;
+    if (maxDiff>30) sa+=`<b style="color:#fa0">Висока розбіжність</b> — різні джерела показують протилежні настрої. Можливий інформаційний конфлікт. `;
+    else sa+=`Джерела узгоджені. `;
+  }
   $('sentimentAnalysis').innerHTML = sa;
 }
 
@@ -703,10 +802,27 @@ function renderCrypto() {
   $('totalMcap').textContent = c.totalMcap>0?`$${(c.totalMcap/1e12).toFixed(2)}T`:'--';
   $('totalVol').textContent = c.totalVolume24h>0?`$${(c.totalVolume24h/1e9).toFixed(0)}B`:'--';
   $('btcDom').textContent = c.btcDominance>0?c.btcDominance.toFixed(1)+'%':'--';
-  let a = c.btc24hChange>5
-    ? `BTC ${(c.btcPrice/1000).toFixed(1)}K, волатильність ${c.btc24hChange.toFixed(1)}%. ${c.btcDominance>55?'BTC-домінація висока — інвестори шукають безпеку.':'Альткоїни отримують капітал.'}`
-    : `Крипторинок стабільний. BTC ${(c.btcPrice/1000).toFixed(1)}K, ETH ${(c.ethPrice/1000).toFixed(2)}K.`;
-  a += ` F&G ${h.fearGreed.value} (${h.fearGreed.classification}).`;
+  let a = `Bitcoin: <b>$${(c.btcPrice/1000).toFixed(1)}K</b>, ETH: <b>$${(c.ethPrice/1000).toFixed(2)}K</b>. `;
+  a += `24h зміна: BTC ${c.btc24hChange.toFixed(2)}%, ETH ${c.eth24hChange.toFixed(2)}%. `;
+  if (c.btc24hChange>5) a+=`<b style="color:#f04">Значна волатильність BTC</b> — ринок нестабільний, можливі каскадні ліквідації. `;
+  else if (c.btc24hChange>2) a+=`Помірна волатильність. `;
+  else a+=`Ринок стабільний. `;
+  // Market structure
+  if (c.btcDominance>0) {
+    a += `<br>Загальна капіталізація: $${(c.totalMcap/1e12).toFixed(2)}T. BTC-домінація: <b>${c.btcDominance.toFixed(1)}%</b>. `;
+    if (c.btcDominance>60) a+=`<b style="color:#fa0">Екстремальна BTC-домінація</b> — капітал концентрується в біткоїні, ризик для альткоїнів. Інвестори в режимі «safe haven». `;
+    else if (c.btcDominance>52) a+=`BTC-домінація підвищена — інвестори обережні, перевагу безпеки над ризиком. `;
+    else a+=`Домінація BTC знижується — «alt season» може наближатися, капітал розподіляється. `;
+    if (c.totalVolume24h>0) {
+      const volToMcap = (c.totalVolume24h/c.totalMcap*100).toFixed(2);
+      a += `Обсяг/Кап: ${volToMcap}%. `;
+      if (parseFloat(volToMcap)>5) a+=`<b style="color:#fa0">Високий обіг</b> — активна торгівля. `;
+    }
+  }
+  a += `<br>Індекс Fear & Greed: <b style="color:${h.fearGreed.value<=30?'#f04':h.fearGreed.value>=70?'#0fa':'#eef'}">${h.fearGreed.value} (${h.fearGreed.classification})</b>. `;
+  if (h.fearGreed.value<=25) a+=`<b style="color:#f04">Екстремальний страх</b> — контрарний сигнал для довгострокових інвесторів. Історично зона накопичення. `;
+  else if (h.fearGreed.value>=75) a+=`<b style="color:#f04">Екстремальна жадібність</b> — ризик корекції, зона потенційного bubble. `;
+  else a+=`F&G в нормальному діапазоні. `;
   $('cryptoAnalysis').innerHTML = a;
 }
 
@@ -726,12 +842,21 @@ function renderTechPulse() {
     $('hnHeadlines').innerHTML = `<div onclick="toggleHN()" style="font-size:7px;color:#556;margin-top:2px;text-transform:uppercase;letter-spacing:1;cursor:pointer">HackerNews Top ${state.hnHeadlines.length} ${state.expandedHN?'▲':'▼'}</div>`+
       (state.expandedHN?`<div style="max-height:80px;overflow-y:auto">${state.hnHeadlines.map(h=>`<div class="news-item" style="border-left-color:#0af">${h}</div>`).join('')}</div>`:'');
   }
-  let a = h.techOptimism>60
-    ? `Технологічний оптимізм високий (${h.techOptimism}/100). Tech-сектор драйвер позитиву. `
-    : h.techOptimism>40
-    ? `Технологічний настрій нейтральний (${h.techOptimism}/100). `
-    : `Технологічний песимізм (${h.techOptimism}/100). `;
-  a += `Dev activity: ${h.devActivity}/100. ${h.devActivity>60?'Висока активність — інноваційний потік сильний.':'Нормальний рівень.'}`;
+  let a = `<span style="color:#556">Технологічний сектор:</span> `;
+  if (h.techOptimism>70) a+=`<b style="color:#0fa">Високий оптимізм (${h.techOptimism}/100)</b> — tech-сектор драйвер позитиву, інноваційний настрій домінує на HackerNews. `;
+  else if (h.techOptimism>50) a+=`Помірний оптимізм (${h.techOptimism}/100) — технологічне співтовариство позитивне. `;
+  else if (h.techOptimism>30) a+=`<b style="color:#fa0">Знижений настрій (${h.techOptimism}/100)</b> — tech-сектор в фазі обережності. `;
+  else a+=`<b style="color:#f04">Технологічний песимізм (${h.techOptimism}/100)</b> — негативний фон в dev-співтоваристві. `;
+  // GitHub dev activity
+  a += `<br><span style="color:#556">Розробка:</span> Dev activity ${h.devActivity}/100. `;
+  if (h.devActivity>70) a+=`<b style="color:#0af">Інтенсивна розробка</b> — нові проекти активно створюються, інноваційний потік сильний. ${state.trendingRepos.length?'Trending: '+state.trendingRepos[0].name+' (★'+state.trendingRepos[0].stars+').':''} `;
+  else if (h.devActivity>40) a+=`Нормальна активність, стабільний потік нових проектів. `;
+  else a+=`Знижена активність — можливо вихідні або сезонний спад. `;
+  // Cross-analysis with HN
+  if (state.hnHeadlines.length) {
+    const techKeywords = state.hnHeadlines.join(' ').toLowerCase().split(/\s+/).filter(w=>['ai','gpt','llm','openai','model','neural','agent','robot'].includes(w));
+    if (techKeywords.length>3) a+=`<br><b style="color:#0af">AI-домінація на HN</b>: ${techKeywords.length} AI-згадок в топ-новинах — AI залишается головним нарративом tech-спільноти. `;
+  }
   $('techAnalysis').innerHTML = a;
 }
 
@@ -759,10 +884,27 @@ function renderAnalytics() {
   $('earthTrend').style.color = eT.includes('UP')?'#f04':eT.includes('DOWN')?'#0fa':'#eef';
   $('humanTrend').textContent = avg(hum).toFixed(1)+' '+hT;
   $('humanTrend').style.color = hT.includes('UP')?'#f04':hT.includes('DOWN')?'#0fa':'#eef';
-  let a = iboDev>15?`⚠️ ВИСОКА ВОЛАТИЛЬНІСТЬ (σ=${iboDev.toFixed(1)}). `
-    :iboDev>8?`Помірна мінливість (σ=${iboDev.toFixed(1)}). `
-    :`Низька мінливість (σ=${iboDev.toFixed(1)}). `;
-  a += `Тренд: ${trend}. Space ${sT}, Earth ${eT}, Human ${hT}.`;
+  let a = '';
+  // Volatility assessment
+  if (iboDev>15) a+=`<b style="color:#f04">■ ВИСОКА ВОЛАТИЛЬНІСТЬ IBONARIUM (σ=${iboDev.toFixed(1)})</b> — система нестабільна, швидкі зміни стану. Ризик-фактор підвищений. `;
+  else if (iboDev>8) a+=`<b style="color:#fa0">Помірна мінливість (σ=${iboDev.toFixed(1)})</b> — нормальні коливання. `;
+  else a+=`<b style="color:#0fa">Низька мінливість (σ=${iboDev.toFixed(1)})</b> — система стабільна. `;
+  // Trend analysis
+  a += `<br>Загальний тренд IBONARIUM: <b>${trend}</b> (μ=${iboAvg.toFixed(1)}, n=${h.length}). `;
+  // Layer decomposition
+  a += `<br><span style="color:#f80">Space</span> μ=${avg(spa).toFixed(1)} ${sT} | <span style="color:#0af">Earth</span> μ=${avg(ear).toFixed(1)} ${eT} | <span style="color:#f0f">Human</span> μ=${avg(hum).toFixed(1)} ${hT}`;
+  // Cross-layer analysis
+  const spaUp = sT.includes('UP'), earUp = eT.includes('UP'), humUp = hT.includes('UP');
+  const upCount = [spaUp,earUp,humUp].filter(Boolean).length;
+  if (upCount>=2) a+=`<br><b style="color:#f04">Конвергентний ріст</b>: ${upCount}/3 шарів зростають — системна ескалація. `;
+  else if (upCount===0) a+=`<br>Всі шари стабільні або спадають — загальне заспокоєння системи. `;
+  // Last vs current
+  if (h.length>=2) {
+    const last = h[h.length-1], prev = h[h.length-2];
+    const iboDiff = last.ibonarium - prev.ibonarium;
+    a += `<br>Δ за останній цикл: IBONARIUM ${(iboDiff>0?'+':'')}${iboDiff.toFixed(1)}`;
+    a += ` (S:${(last.space-prev.space>0?'+':'')}${(last.space-prev.space).toFixed(0)} E:${(last.earth-prev.earth>0?'+':'')}${(last.earth-prev.earth).toFixed(0)} H:${(last.human-prev.human>0?'+':'')}${(last.human-prev.human).toFixed(0)})`;
+  }
   $('analyticsText').innerHTML = a;
 }
 
